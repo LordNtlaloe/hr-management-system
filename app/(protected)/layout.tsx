@@ -1,15 +1,15 @@
-import Navbar from "./_components/Navbar";
+import { SidebarProvider } from "@/context/SidebarContext";
 
 interface ProtectedLayoutProps {
     children: React.ReactNode
 }
 
 const ProtectedLayout = ({ children }: ProtectedLayoutProps) => {
-    return(
-        <div className="w-screen h-screen flex flex-col gap-y-10 items-center justify-center">
-            <Navbar />
+    return (
+        <SidebarProvider>
             {children}
-        </div>
+        </SidebarProvider>
+
     )
 }
 

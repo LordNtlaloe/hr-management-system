@@ -12,7 +12,7 @@ const init = async () => {
     try {
         const connection = await connectToDB();
         dbConnection = connection;
-        database = await dbConnection?.db("td_holdings_db");
+        database = await dbConnection?.db("hr_management_db");
     } catch (error) {
         console.error("Database connection failed:", error);
         throw error;

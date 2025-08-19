@@ -18,7 +18,7 @@ const init = async () => {
     try {
         const connection = await connectToDB();
         dbConnection = connection;
-        database = await dbConnection?.db("td_holdings_db");
+        database = await dbConnection?.db("hr_management_db");
     } catch (error) {
         console.error("Database connection failed:", error);
         throw error;
@@ -63,7 +63,10 @@ export const login = async (values: z.infer<typeof LoginSchema>) => {
 
         return { success: "Confirmation Email Sent" }
     }
-
+    const passwordsMatch = await bcrypt.compare(password, existingUser.password);
+    if (!passwordsMatch) {
+        return { error: "Invalid Credentials" };
+    }
     try {
         await signIn("credentials", {
             email,
@@ -87,74 +90,80 @@ export const login = async (values: z.infer<typeof LoginSchema>) => {
 }
 
 export const signup = async (values: z.infer<typeof SignUpSchema>) => {
-    console.log("Signup values:", values)
+  console.log("Signup values:", values);
 
-    const validateFields = SignUpSchema.safeParse(values);
-    if (!validateFields.success) {
-        console.log("Validation errors:", validateFields.error.errors);
-        return { error: "Invalid Fields" }
+  // Validate the input
+  const validateFields = SignUpSchema.safeParse(values);
+
+  if (!validateFields.success) {
+    // Use flatten() to get errors by field
+    const fieldErrors = validateFields.error.flatten().fieldErrors;
+    console.log("Validation errors:", fieldErrors);
+    return { error: "Invalid fields", details: fieldErrors };
+  }
+
+  const { first_name, last_name, phone_number, email, password, role } =
+    validateFields.data;
+
+  try {
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Ensure DB connection
+    if (!dbConnection) await init();
+
+    const collection = database.collection("users");
+    if (!collection) {
+      return { error: "Failed to connect to collection" };
     }
 
-    const { first_name, last_name, phone_number, email, password, role } = validateFields.data;
-
-    try {
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        if (!dbConnection) await init();
-
-        const collection = database.collection("users");
-        if (!collection || !database) {
-            return { error: "Failed to connect to collection!!" };
-        }
-
-        // Check if user already exists
-        const existingUser = await getUserByEmail(email)
-        if (existingUser) {
-            return { error: "User Already Exists" }
-        }
-
-        // Create new user
-        const result = await collection.insertOne({
-            first_name,
-            last_name,
-            phone_number,
-            email,
-            password: hashedPassword,
-            role,
-            emailVerified: null, // Add this field for verification tracking
-            createdAt: new Date()
-        });
-
-        console.log("User created successfully:", result.insertedId);
-
-        // Generate verification token
-        const tokenResult = await generateVerificationToken(email);
-
-        if (!tokenResult) {
-            return { error: "Failed to generate verification token" };
-        }
-
-        // Send verification email
-        const emailResult = await sendTokenEmail({
-            to: email,
-            name: `${first_name} ${last_name}`,
-            subject: "Verify Your Email Address",
-            token: tokenResult.token as string,
-            tokenType: 'verification'
-        });
-
-        if (!emailResult.success) {
-            return { error: "User created but failed to send verification email" };
-        }
-
-        return { success: "Verification Email Has Been Sent" }
-
-    } catch (error: any) {
-        console.error("An error occurred saving new user:", error.message);
-        return { error: error.message }
+    // Check if user already exists
+    const existingUser = await getUserByEmail(email);
+    if (existingUser) {
+      return { error: "User already exists" };
     }
-}
 
+    // Create new user
+    const result = await collection.insertOne({
+      first_name,
+      last_name,
+      phone_number,
+      email,
+      password: hashedPassword,
+      role,
+      emailVerified: null,
+      createdAt: new Date(),
+    });
+
+    console.log("User created successfully:", result.insertedId);
+
+    // Generate verification token
+    const tokenResult = await generateVerificationToken(email);
+    if (!tokenResult) {
+      return { error: "Failed to generate verification token" };
+    }
+
+    // Send verification email
+    const emailResult = await sendTokenEmail({
+      to: email,
+      name: `${first_name} ${last_name}`,
+      subject: "Verify Your Email Address",
+      token: tokenResult.token as string,
+      tokenType: "verification",
+    });
+
+    if (!emailResult.success) {
+      return {
+        error: "User created but failed to send verification email",
+      };
+    }
+
+    return { success: "Verification email has been sent" };
+  } catch (error: any) {
+    console.error("An error occurred saving new user:", error.message);
+    return { error: error.message };
+  }
+};
 export const getVerificationTokenByEmail = async (email: string) => {
     try {
         if (!dbConnection) await init();

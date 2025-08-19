@@ -1,18 +1,20 @@
-import { DefaultSession } from "next-auth";
-
-export type ExtenedUser = DefaultSession["user"] & {
-    role: "Cashier" | "Manager" | "Admin"
-}
+import { DefaultSession } from "next-auth"
 
 declare module "next-auth" {
-    interface Session {
-        user: ExtenedUser
-    }
+  interface User {
+    role?: "Employee"  | "Admin"
+  }
+  
+  interface Session {
+    user: {
+      id: string
+      role: "Employee"  | "Admin"
+    } & DefaultSession["user"]
+  }
 }
 
-
-declare module "next-auth" {
-    interface User {
-        user: ExtenedUser
-    }
+declare module "next-auth/jwt" {
+  interface JWT {
+    role?: "Employee"  | "Admin"
+  }
 }
