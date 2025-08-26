@@ -5,7 +5,6 @@ import { ObjectId } from "mongodb";
 
 let dbConnection: any;
 let database: any;
-export const runtime = 'nodejs'
 
 const init = async () => {
     if (!dbConnection) {
