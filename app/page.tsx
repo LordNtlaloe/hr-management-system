@@ -13,7 +13,7 @@ const EmployeeManagementHero = () => {
       {/* Header */}
       <header className="flex justify-between items-center px-6 py-4 md:px-12 bg-white dark:bg-gray-950 shadow-sm">
         <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-          HR<span className="text-gray-800 dark:text-gray-200">Management</span>
+          Ministry Of Police<span className="text-gray-800 dark:text-gray-200">&nbsp;And Public Safety</span>
         </div>
 
         <div className="flex items-center gap-4">
@@ -48,7 +48,7 @@ const EmployeeManagementHero = () => {
       <section className="flex flex-col items-center justify-center text-center px-4 py-20 md:py-32">
         <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white mb-6">
           {user ? (
-            <>Welcome back, <span className="text-blue-600 dark:text-blue-400">{user.name || 'User'}</span>!</>
+            <>Welcome, <span className="text-blue-600 dark:text-blue-400">{user.name || 'User'}</span>!</>
           ) : (
             <>Streamline Your <span className="text-blue-600 dark:text-blue-400">Workforce</span></>
           )}
@@ -67,7 +67,7 @@ const EmployeeManagementHero = () => {
           className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 px-8 py-6 text-lg"
         >
           <Link href={user ? "/admin" : "/login"}>
-            {user ? "Go to Dashboard" : "Employee Login"}
+            {user ? "Go to Dashboard" : "Login"}
           </Link>
         </Button>
       </section>
