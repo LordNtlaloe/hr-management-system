@@ -1,15 +1,28 @@
-// components/dashboard/users/users-table.tsx
 "use client"
 
 import * as React from "react"
 import { useState, useEffect } from "react"
-import { useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel, SortingState, ColumnFiltersState, flexRender } from "@tanstack/react-table"
+import {
+    useReactTable,
+    getCoreRowModel,
+    getSortedRowModel,
+    getFilteredRowModel,
+    getPaginationRowModel,
+    SortingState,
+    ColumnFiltersState,
+    flexRender,
+} from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+} from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { columns } from "@/components/dashboard/users/user-columns"
-import { getAllUsers } from "@/actions/user.actions"
+import { getAllUsers, deleteUser } from "@/actions/user.actions"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 
@@ -20,21 +33,31 @@ export default function UsersTable() {
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
     const [loading, setLoading] = useState(true)
 
-       useEffect(() => {
+    useEffect(() => {
         const fetchUsers = async () => {
             try {
                 setLoading(true)
                 const users = await getAllUsers()
-                setUsers(users) // Now this will work because we're passing an array
+                setUsers(users)
             } catch (error) {
                 toast.error("Failed to fetch users")
-                setUsers([]) // Set empty array on error
+                setUsers([])
             } finally {
                 setLoading(false)
             }
         }
         fetchUsers()
     }, [])
+
+    const handleDeleteUser = async (userId: string) => {
+        try {
+            await deleteUser(userId)
+            toast.success("User deleted")
+            setUsers((prev) => prev.filter((u) => u._id !== userId))
+        } catch (error) {
+            toast.error("Failed to delete user")
+        }
+    }
 
     const table = useReactTable({
         data: users,
@@ -88,6 +111,7 @@ export default function UsersTable() {
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
+
             <div className="rounded-md border">
                 <Table>
                     <TableHeader>
@@ -103,13 +127,14 @@ export default function UsersTable() {
                                             )}
                                     </TableHead>
                                 ))}
+                                <TableHead>Actions</TableHead>
                             </TableRow>
                         ))}
                     </TableHeader>
                     <TableBody>
                         {loading ? (
                             <TableRow>
-                                <TableCell colSpan={columns.length} className="h-24 text-center">
+                                <TableCell colSpan={columns.length + 1} className="h-24 text-center">
                                     Loading users...
                                 </TableCell>
                             </TableRow>
@@ -118,7 +143,6 @@ export default function UsersTable() {
                                 <TableRow
                                     key={row.id}
                                     data-state={row.getIsSelected() && "selected"}
-                                    onClick={() => router.push(`/users/${row.original._id}`)}
                                     className="cursor-pointer hover:bg-muted/50"
                                 >
                                     {row.getVisibleCells().map((cell) => (
@@ -126,11 +150,23 @@ export default function UsersTable() {
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                         </TableCell>
                                     ))}
+                                    <TableCell>
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            onClick={(event) => {
+                                                event.stopPropagation() // Prevent row click
+                                                handleDeleteUser(row.original._id)
+                                            }}
+                                        >
+                                            Delete
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))
                         ) : (
                             <TableRow>
-                                <TableCell colSpan={columns.length} className="h-24 text-center">
+                                <TableCell colSpan={columns.length + 1} className="h-24 text-center">
                                     No users found.
                                 </TableCell>
                             </TableRow>

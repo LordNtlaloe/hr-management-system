@@ -95,6 +95,7 @@ export const getUserById = async (id: string) => {
 
 // READ - Get all users (with optional pagination)
 // actions/user.actions.ts
+// READ - Get all users
 export const getAllUsers = async () => {
     if (!dbConnection) await init();
     try {
@@ -105,12 +106,22 @@ export const getAllUsers = async () => {
         }
 
         const users = await collection.find({}).toArray();
-        return users; // Return the array directly
+
+        // Convert ObjectId and Dates to strings
+        const plainUsers = users.map((user: { _id: { toString: () => any; }; createdAt: { toString: () => any; }; updatedAt: { toString: () => any; }; }) => ({
+            ...user,
+            _id: user._id.toString(),
+            createdAt: user.createdAt ? user.createdAt.toString() : null,
+            updatedAt: user.updatedAt ? user.updatedAt.toString() : null,
+        }));
+
+        return plainUsers;
     } catch (error: any) {
         console.log("An error occurred...", error.message);
-        throw error; // Throw the error to be caught in the component
+        throw error;
     }
-}
+};
+
 
 // UPDATE - Update user by ID
 export const updateUser = async (id: string, updateData: any) => {

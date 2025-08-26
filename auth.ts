@@ -60,7 +60,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 id: user._id?.toString() || user.id?.toString(),
                 email: user.email,
                 name: user.name,
-                role: user.role || "Cashier"
+                role: user.role || "Employee"
               } as User
             }
           }
@@ -96,7 +96,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             {
               $set: {
                 emailVerified: new Date(),
-                role: "Cashier"
+                role: "Employee"
               }
             },
             { upsert: false }
@@ -119,7 +119,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               const collection = db.collection("users")
               await collection.updateOne(
                 { email: user.email },
-                { $set: { role: "Cashier" } }
+                { $set: { role: "Employee" } }
               )
             }
           }

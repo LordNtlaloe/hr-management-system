@@ -4,265 +4,250 @@ import { connectToDB } from "@/lib/db";
 import { ObjectId } from "mongodb";
 let dbConnection: any;
 let database: any;
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
 const init = async () => {
-    try {
+    if (!dbConnection) {
         const connection = await connectToDB();
         dbConnection = connection;
         database = await dbConnection?.db("hr_management_db");
-    } catch (error) {
-        console.error("Database connection failed:", error);
-        throw error;
     }
-}
+};
 
-// Attendance CRUD Operations
-export const createAttendance = async (attendanceData: any) => {
+// Daily attendance report (who is present, absent, on leave)
+export const getDailyAttendanceReport = async (date: Date) => {
     if (!dbConnection) await init();
     try {
-        const collection = await database?.collection("attendance");
-        const attendance = {
-            ...attendanceData,
-            createdAt: new Date(),
-            updatedAt: new Date()
-        };
-        const result = await collection.insertOne(attendance);
-        return { insertedId: result.insertedId, success: true };
-    } catch (error: any) {
-        console.error("Error creating attendance:", error.message)
-        return { error: error.message };
-    }
-}
+        const employeesCollection = database.collection("employees");
+        const timeCollection = database.collection("time_entries");
+        const leaveCollection = database.collection("leave_requests");
 
-export const clockIn = async (employeeId: string, location?: string) => {
-    if (!dbConnection) await init();
-    try {
-        const collection = await database?.collection("attendance");
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const employees = await employeesCollection.find({}).toArray();
 
-        // Check if already clocked in today
-        const existingRecord = await collection.findOne({
-            employeeId: new ObjectId(employeeId),
-            date: {
-                $gte: startOfDay,
-                $lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-            }
+        const timeEntries = await timeCollection.find({ date }).toArray();
+        const leaveRequests = await leaveCollection.find({
+            status: "approved",
+            startDate: { $lte: date },
+            endDate: { $gte: date }
+        }).toArray();
+
+        return employees.map((emp: any) => {
+            const timeEntry = timeEntries.find((t: any) => t.employeeId.toString() === emp._id.toString());
+            const leave = leaveRequests.find((l: any) => l.employeeId.toString() === emp._id.toString());
+            return {
+                employee: emp,
+                status: leave ? "On Leave" : timeEntry ? "Present" : "Absent",
+                timeEntry,
+                leave
+            };
         });
-
-        if (existingRecord && existingRecord.clockIn) {
-            return { error: "Already clocked in today" };
-        }
-
-        const attendanceData = {
-            employeeId: new ObjectId(employeeId),
-            date: startOfDay,
-            clockIn: new Date(),
-            location: location || "Office",
-            status: "present",
-            createdAt: new Date(),
-            updatedAt: new Date()
-        };
-
-        const result = await collection.insertOne(attendanceData);
-        return { insertedId: result.insertedId, success: true };
     } catch (error: any) {
-        console.error("Error clocking in:", error.message);
+        console.error("Error generating daily attendance report:", error.message);
         return { error: error.message };
     }
-}
+};
 
-export const clockOut = async (employeeId: string, location?: string) => {
+// Monthly summary for department or company-wide
+export const getMonthlyAttendanceSummary = async (year: number, month: number, departmentId?: string) => {
     if (!dbConnection) await init();
     try {
-        const collection = await database?.collection("attendance");
-        const today = new Date();
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const employeesCollection = database.collection("employees");
+        const timeCollection = database.collection("time_entries");
+        const leaveCollection = database.collection("leave_requests");
 
-        const result = await collection.updateOne(
-            {
-                employeeId: new ObjectId(employeeId),
-                date: {
-                    $gte: startOfDay,
-                    $lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-                },
-                clockOut: { $exists: false }
-            },
-            {
-                $set: {
-                    clockOut: new Date(),
-                    clockOutLocation: location || "Office",
-                    updatedAt: new Date()
-                }
-            }
-        );
+        let empFilter: any = {};
+        if (departmentId) empFilter.departmentId = new ObjectId(departmentId);
 
-        if (result.modifiedCount === 0) {
-            return { error: "No clock-in record found for today" };
-        }
+        const employees = await employeesCollection.find(empFilter).toArray();
+        const startDate = new Date(year, month, 1);
+        const endDate = new Date(year, month + 1, 0);
 
-        // Calculate total hours worked
-        const record = await collection.findOne({
-            employeeId: new ObjectId(employeeId),
-            date: {
-                $gte: startOfDay,
-                $lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-            }
+        const timeEntries = await timeCollection.find({
+            date: { $gte: startDate, $lte: endDate }
+        }).toArray();
+
+        const leaveRequests = await leaveCollection.find({
+            status: "approved",
+            startDate: { $lte: endDate },
+            endDate: { $gte: startDate }
+        }).toArray();
+
+        return employees.map((emp: any) => {
+            const empTimeEntries = timeEntries.filter((t: any) => t.employeeId.toString() === emp._id.toString());
+            const empLeaves = leaveRequests.filter((l: any) => l.employeeId.toString() === emp._id.toString());
+            return {
+                employee: emp,
+                totalDaysWorked: empTimeEntries.length,
+                totalLeaves: empLeaves.length,
+                overtimeHours: empTimeEntries.reduce((sum: number, t: any) => sum + (t.overtime || 0), 0)
+            };
         });
-
-        if (record && record.clockIn && record.clockOut) {
-            const hoursWorked = (record.clockOut.getTime() - record.clockIn.getTime()) / (1000 * 60 * 60);
-            await collection.updateOne(
-                { _id: record._id },
-                { $set: { hoursWorked: Math.round(hoursWorked * 100) / 100 } }
-            );
-        }
-
-        return { success: true, modifiedCount: result.modifiedCount };
     } catch (error: any) {
-        console.error("Error clocking out:", error.message);
+        console.error("Error generating monthly attendance summary:", error.message);
         return { error: error.message };
     }
-}
+};
 
-export const getAttendanceById = async (id: string) => {
+// Absenteeism trends (for charts/analytics)
+export const getAbsenteeismTrends = async (year: number) => {
     if (!dbConnection) await init();
     try {
-        const collection = await database?.collection("attendance");
-        const attendance = await collection.findOne({ _id: new ObjectId(id) });
-        return attendance || null;
-    } catch (error: any) {
-        console.error("Error fetching attendance:", error.message);
-        return { error: error.message };
-    }
-}
+        const timeCollection = database.collection("time_entries");
+        const leaveCollection = database.collection("leave_requests");
 
-export const getEmployeeAttendance = async (employeeId: string, startDate?: Date, endDate?: Date) => {
-    if (!dbConnection) await init();
-    try {
-        const collection = await database?.collection("attendance");
-        let filter: any = { employeeId: new ObjectId(employeeId) };
+        const startDate = new Date(year, 0, 1);
+        const endDate = new Date(year + 1, 0, 1);
 
-        if (startDate && endDate) {
-            filter.date = { $gte: startDate, $lte: endDate };
-        }
-
-        return await collection.find(filter).sort({ date: -1 }).toArray();
-    } catch (error: any) {
-        console.error("Error fetching employee attendance:", error.message);
-        return { error: error.message };
-    }
-}
-
-export const getDailyAttendance = async (date: Date) => {
-    if (!dbConnection) await init();
-    try {
-        const collection = await database?.collection("attendance");
-        const employeeCollection = await database?.collection("employees");
-
-        const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
-
-        const attendance = await collection.aggregate([
+        const leaves = await leaveCollection.aggregate([
             {
                 $match: {
-                    date: { $gte: startOfDay, $lt: endOfDay }
+                    status: "approved",
+                    startDate: { $gte: startDate, $lt: endDate }
                 }
             },
             {
-                $lookup: {
-                    from: "employees",
-                    localField: "employeeId",
-                    foreignField: "_id",
-                    as: "employee"
+                $group: {
+                    _id: { $month: "$startDate" },
+                    leaves: { $sum: 1 }
                 }
-            },
-            {
-                $unwind: "$employee"
             }
         ]).toArray();
 
-        return attendance;
-    } catch (error: any) {
-        console.error("Error fetching daily attendance:", error.message);
-        return { error: error.message };
-    }
-}
-
-export const getAttendanceReport = async (startDate: Date, endDate: Date, departmentId?: string) => {
-    if (!dbConnection) await init();
-    try {
-        const collection = await database?.collection("attendance");
-
-        let matchCondition: any = {
-            date: { $gte: startDate, $lte: endDate }
-        };
-
-        const pipeline = [
-            { $match: matchCondition },
+        const absences = await timeCollection.aggregate([
             {
-                $lookup: {
-                    from: "employees",
-                    localField: "employeeId",
-                    foreignField: "_id",
-                    as: "employee"
+                $match: {
+                    date: { $gte: startDate, $lt: endDate },
+                    status: "absent"
                 }
             },
-            { $unwind: "$employee" }
-        ];
-
-        if (departmentId) {
-            pipeline.push({
-                $match: {
-                    "employee.departmentId": new ObjectId(departmentId)
-                }
-            } as any);
-        }
-
-        pipeline.push(
             {
                 $group: {
-                    _id: "$employeeId",
-                    employee: { $first: "$employee" },
-                    totalDays: { $sum: 1 },
-                    presentDays: {
-                        $sum: {
-                            $cond: [{ $eq: ["$status", "present"] }, 1, 0]
-                        }
-                    },
-                    totalHours: { $sum: "$hoursWorked" },
-                    avgHours: { $avg: "$hoursWorked" }
+                    _id: { $month: "$date" },
+                    absences: { $sum: 1 }
                 }
-            } as any
-        );
+            }
+        ]).toArray();
 
-        return await collection.aggregate(pipeline).toArray();
+        return { leaves, absences };
     } catch (error: any) {
-        console.error("Error generating attendance report:", error.message);
+        console.error("Error generating absenteeism trends:", error.message);
         return { error: error.message };
     }
-}
+};
 
-export const markAbsent = async (employeeId: string, date: Date, reason?: string) => {
+
+export const createTimeEntry = async (timeData: any) => {
     if (!dbConnection) await init();
     try {
-        const collection = await database?.collection("attendance");
-        const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-
-        const attendanceData = {
-            employeeId: new ObjectId(employeeId),
-            date: startOfDay,
-            status: "absent",
-            reason: reason || "Not specified",
+        const collection = await database.collection("time_entries");
+        const entry = {
+            ...timeData,
             createdAt: new Date(),
             updatedAt: new Date()
         };
-
-        const result = await collection.insertOne(attendanceData);
+        const result = await collection.insertOne(entry);
         return { insertedId: result.insertedId, success: true };
     } catch (error: any) {
-        console.error("Error marking absent:", error.message);
+        console.error("Error creating time entry:", error.message);
         return { error: error.message };
     }
-}
+};
+
+// Get time entry by ID
+export const getTimeEntryById = async (id: string) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database.collection("time_entries");
+        return await collection.findOne({ _id: new ObjectId(id) });
+    } catch (error: any) {
+        console.error("Error fetching time entry:", error.message);
+        return { error: error.message };
+    }
+};
+
+// Get all time entries for employee
+export const getEmployeeTimeEntries = async (employeeId: string, date?: Date) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database.collection("time_entries");
+        let filter: any = { employeeId: new ObjectId(employeeId) };
+        if (date) {
+            filter.date = date;
+        }
+        return await collection.find(filter).sort({ date: -1 }).toArray();
+    } catch (error: any) {
+        console.error("Error fetching employee time entries:", error.message);
+        return { error: error.message };
+    }
+};
+
+// Update time entry (e.g., adjust hours, mark overtime)
+export const updateTimeEntry = async (id: string, updateData: any) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database.collection("time_entries");
+        const result = await collection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { ...updateData, updatedAt: new Date() } }
+        );
+        return { modifiedCount: result.modifiedCount, success: true };
+    } catch (error: any) {
+        console.error("Error updating time entry:", error.message);
+        return { error: error.message };
+    }
+};
+
+// Delete time entry
+export const deleteTimeEntry = async (id: string) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database.collection("time_entries");
+        const result = await collection.deleteOne({ _id: new ObjectId(id) });
+        return { deletedCount: result.deletedCount, success: true };
+    } catch (error: any) {
+        console.error("Error deleting time entry:", error.message);
+        return { error: error.message };
+    }
+};
+
+
+export const getTimeTrackingSummary = async (from: Date, to: Date) => {
+    if (!dbConnection) await init();
+
+    try {
+        const collection = await database?.collection("time_tracking");
+
+        // Match records within the date range
+        const pipeline = [
+            {
+                $match: {
+                    date: { $gte: from, $lte: to }
+                }
+            },
+            {
+                $group: {
+                    _id: "$date",
+                    present: { $sum: { $cond: [{ $eq: ["$status", "present"] }, 1, 0] } },
+                    absent: { $sum: { $cond: [{ $eq: ["$status", "absent"] }, 1, 0] } },
+                    late: { $sum: { $cond: [{ $eq: ["$status", "late"] }, 1, 0] } },
+                    employeeIds: { $push: "$employeeId" }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ];
+
+        const result = await collection.aggregate(pipeline).toArray();
+
+        // Format date string for chart labels
+        return result.map((item: any) => ({
+            date: item._id.toISOString().split("T")[0], // YYYY-MM-DD
+            present: item.present,
+            absent: item.absent,
+            late: item.late,
+            employeeIds: item.employeeIds
+        }));
+    } catch (error: any) {
+        console.error("Error fetching time tracking summary:", error.message);
+        return { error: error.message };
+    }
+};
