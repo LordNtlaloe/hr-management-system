@@ -23,6 +23,7 @@ export const createLeaveRequest = async (leaveData: any) => {
         const collection = await database?.collection("leave_requests");
         const leave = {
             ...leaveData,
+            employeeId: new ObjectId(leaveData.employeeId), // Ensure ObjectId conversion
             status: "pending",
             appliedDate: new Date(),
             createdAt: new Date(),
@@ -155,6 +156,7 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
     }
 }
 
+// FIXED: This was the main issue - incorrect lookup configuration
 export const getPendingLeaveRequests = async (managerId?: string) => {
     if (!dbConnection) await init();
     try {
@@ -163,20 +165,78 @@ export const getPendingLeaveRequests = async (managerId?: string) => {
             { $match: { status: "pending" } },
             {
                 $lookup: {
-                    from: "leave_requests",
-                    localField: "employeeId",
-                    foreignField: "_id",
-                    as: "employee"
+                    from: "employees", // Fixed: should lookup from employees collection
+                    localField: "employeeId", // Fixed: should match employeeId field
+                    foreignField: "_id", // Fixed: should match employee's _id
+                    as: "employeeId" // This will replace the ObjectId with employee data
                 }
             },
-            { $unwind: "$employee" }
+            { $unwind: "$employeeId" }, // Unwind the employee data
+            { $sort: { appliedDate: 1 } }
         ];
-
-        pipeline.push({ $sort: { appliedDate: 1 } });
 
         return await collection.aggregate(pipeline).toArray();
     } catch (error: any) {
         console.error("Error fetching pending leave requests:", error.message);
+        return { error: error.message };
+    }
+}
+
+// Get all leave requests (for admin view)
+export const getAllLeaveRequests = async (status?: string, departmentId?: string) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database?.collection("leave_requests");
+        let pipeline: any[] = [
+            {
+                $lookup: {
+                    from: "employees",
+                    localField: "employeeId",
+                    foreignField: "_id",
+                    as: "employeeId"
+                }
+            },
+            { $unwind: "$employeeId" }
+        ];
+
+        // Add status filter if provided
+        if (status) {
+            pipeline.unshift({ $match: { status: status } });
+        }
+
+        // Add department filter if provided
+        if (departmentId) {
+            pipeline.push({
+                $match: {
+                    "employeeId.departmentId": new ObjectId(departmentId)
+                }
+            });
+        }
+
+        // Add approver information for approved/rejected requests
+        pipeline.push(
+            {
+                $lookup: {
+                    from: "employees",
+                    localField: "approvedBy",
+                    foreignField: "_id",
+                    as: "approver"
+                }
+            },
+            {
+                $lookup: {
+                    from: "employees",
+                    localField: "rejectedBy",
+                    foreignField: "_id",
+                    as: "rejector"
+                }
+            },
+            { $sort: { appliedDate: -1 } }
+        );
+
+        return await collection.aggregate(pipeline).toArray();
+    } catch (error: any) {
+        console.error("Error fetching all leave requests:", error.message);
         return { error: error.message };
     }
 }
@@ -188,6 +248,7 @@ export const createLeaveBalance = async (balanceData: any) => {
         const collection = await database?.collection("leave_balances");
         const balance = {
             ...balanceData,
+            employeeId: new ObjectId(balanceData.employeeId),
             createdAt: new Date(),
             updatedAt: new Date()
         };
@@ -240,6 +301,7 @@ const updateLeaveBalance = async (
         throw error;
     }
 }
+
 export const resetLeaveBalances = async (year: number) => {
     if (!dbConnection) await init();
     try {
@@ -309,11 +371,10 @@ export const getLeaveReport = async (startDate: Date, endDate: Date, departmentI
         return await collection.aggregate(pipeline).toArray();
     }
     catch (error: any) {
-        console.error("Error resetting leave balances:", error.message);
+        console.error("Error generating leave report:", error.message);
         return { error: error.message };
     }
 }
-
 
 export const getEmployeeStatusCounts = async () => {
     if (!dbConnection) await init();
@@ -350,7 +411,6 @@ export const getEmployeeStatusCounts = async () => {
         return { error: error.message };
     }
 }
-
 
 export const getMonthlyLeaveRequests = async (year: number) => {
     if (!dbConnection) await init();

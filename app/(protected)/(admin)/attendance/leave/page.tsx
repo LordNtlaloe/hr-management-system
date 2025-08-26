@@ -1,263 +1,159 @@
-"use client"
-import React, { useEffect, useState } from 'react'
-import { getPendingLeaveRequests, approveLeaveRequest, rejectLeaveRequest } from '@/actions/leaves.actions'
-import { useCurrentRole } from '@/hooks/use-current-role'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Calendar, Clock, User, Check, X, Loader2, Mail } from 'lucide-react'
-import { format } from 'date-fns'
-import { useCurrentUser } from '@/hooks/use-current-user'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+"use client";
 
-interface Employee {
-    _id: string
-    name: string
-    email: string
-    avatar?: string
-    position?: string
-    department?: string
-}
+import React from 'react';
+import { useCurrentRole } from '@/hooks/use-current-role';
+import { useCurrentUser } from '@/hooks/use-current-user';
+import Calendar from '@/components/calendar/Calendar';
+import RequestedLeaves from '@/components/attendence/requested-leaves';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CalendarDays, ClipboardList, Users, BarChart3 } from 'lucide-react';
 
-interface LeaveRequest {
-    _id: string
-    employeeId: Employee
-    leaveType: string
-    startDate: string
-    endDate: string
-    reason?: string
-    status: 'pending' | 'approved' | 'rejected'
-    approvedBy?: Employee
-    approvedDate?: string
-    appliedDate: string
-    days: number
-    createdAt: string
-    updatedAt: string
-}
+const LeavesPage: React.FC = () => {
+    const role = useCurrentRole();
+    const user = useCurrentUser();
 
-export default function RequestedLeaves() {
-    const [leaves, setLeaves] = useState<LeaveRequest[]>([])
-    const [loading, setLoading] = useState(true)
-    const [processing, setProcessing] = useState<string | null>(null)
-    const role = useCurrentRole()
-    const user = useCurrentUser()
-    const isAdmin = role === 'Admin'
-
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true)
-                const data = await getPendingLeaveRequests()
-                if (Array.isArray(data)) {
-                    setLeaves(data)
-                }
-            } catch (error) {
-                console.error('Failed to fetch leave requests:', error)
-            } finally {
-                setLoading(false)
-            }
-        }
-        fetchData()
-    }, [])
-
-    const handleApprove = async (leaveId: string) => {
-        try {
-            setProcessing(`approve-${leaveId}`)
-            const result = await approveLeaveRequest(leaveId, user?.id || '')
-            if (result.success) {
-                setLeaves(leaves.map(leave =>
-                    leave._id === leaveId ? {
-                        ...leave,
-                        status: 'approved',
-                        approvedBy: {
-                            _id: user?.id || '',
-                            name: user?.name || 'Admin',
-                            email: user?.email || '',
-                            avatar: user?.image || ''
-                        },
-                        approvedDate: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    } : leave
-                ))
-            }
-        } catch (error) {
-            console.error('Failed to approve leave:', error)
-        } finally {
-            setProcessing(null)
-        }
-    }
-
-    const handleReject = async (leaveId: string) => {
-        try {
-            setProcessing(`reject-${leaveId}`)
-            const result = await rejectLeaveRequest(leaveId, user?.id || '')
-            if (result.success) {
-                setLeaves(leaves.map(leave =>
-                    leave._id === leaveId ? {
-                        ...leave,
-                        status: 'rejected',
-                        approvedBy: {
-                            _id: user?.id || '',
-                            name: user?.name || 'Admin',
-                            email: user?.email || '',
-                            avatar: user?.image || ''
-                        },
-                        approvedDate: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    } : leave
-                ))
-            }
-        } catch (error) {
-            console.error('Failed to reject leave:', error)
-        } finally {
-            setProcessing(null)
-        }
-    }
-
-    const getStatusBadge = (status: string) => {
-        switch (status) {
-            case 'approved':
-                return <Badge className="gap-1 bg-green-500 text-green-900"><Check size={14} /> Approved</Badge>
-            case 'rejected':
-                return <Badge variant="destructive" className="gap-1"><X size={14} /> Rejected</Badge>
-            default:
-                return <Badge className="gap-1 bg-red-500 text-red-900"><Loader2 size={14} className="animate-spin" /> Pending</Badge>
-        }
-    }
-
-    if (loading) {
+    if (!user || !role) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin" />
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
             </div>
-        )
+        );
     }
 
+    // Employee view - show calendar with request functionality
+    if (role === 'Employee') {
+        return (
+            <div className="container mx-auto p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                            My Leaves
+                        </h1>
+                        <p className="text-gray-500 dark:text-gray-400">
+                            Manage your leave requests and view your leave calendar
+                        </p>
+                    </div>
+                </div>
+
+                <Tabs defaultValue="calendar" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="calendar" className="flex items-center gap-2">
+                            <CalendarDays className="h-4 w-4" />
+                            Calendar
+                        </TabsTrigger>
+                        <TabsTrigger value="requests" className="flex items-center gap-2">
+                            <ClipboardList className="h-4 w-4" />
+                            My Requests
+                        </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="calendar" className="mt-6">
+                        {/* Non-null assertion ensures employeeId is string */}
+                        <Calendar employeeId={user.id!} />
+                    </TabsContent>
+
+                    <TabsContent value="requests" className="mt-6">
+                        <EmployeeLeaveRequests employeeId={user.id!} />
+                    </TabsContent>
+                </Tabs>
+            </div>
+        );
+    }
+
+    // Admin/Manager view - show pending requests and management tools
     return (
-        <div className="p-6 space-y-6">
+        <div className="container mx-auto p-6 space-y-6">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Leave Requests</h1>
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Badge variant="outline">{leaves.length} pending</Badge>
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                        Leave Management
+                    </h1>
+                    <p className="text-gray-500 dark:text-gray-400">
+                        Review and manage employee leave requests
+                    </p>
                 </div>
             </div>
 
-            {leaves.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-12 border rounded-lg">
-                    <Calendar className="w-12 h-12 mb-4 text-gray-400" />
-                    <p className="text-lg font-medium text-gray-500">No pending leave requests</p>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {leaves.map((leave) => (
-                        <div key={leave._id} className="p-6 border rounded-lg shadow-sm">
-                            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                                <div className="space-y-4">
-                                    <div className="flex items-start gap-4">
-                                        <Avatar className="w-10 h-10">
-                                            <AvatarImage src={leave.employeeId.avatar} />
-                                            <AvatarFallback>
-                                                {leave.employeeId.name.charAt(0)}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div>
-                                            <h3 className="font-medium">{leave.employeeId.name}</h3>
-                                            <div className="flex items-center gap-2 text-sm text-gray-500">
-                                                <Mail className="w-4 h-4" />
-                                                <span>{leave.employeeId.email}</span>
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-2 mt-2">
-                                                {leave.employeeId.department && (
-                                                    <Badge variant="outline">{leave.employeeId.department}</Badge>
-                                                )}
-                                                {leave.employeeId.position && (
-                                                    <span className="text-sm text-gray-500">{leave.employeeId.position}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
+            <Tabs defaultValue="pending" className="w-full">
+                <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="pending" className="flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4" />
+                        Pending Requests
+                    </TabsTrigger>
+                    <TabsTrigger value="all-requests" className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        All Requests
+                    </TabsTrigger>
+                    <TabsTrigger value="calendar" className="flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        Team Calendar
+                    </TabsTrigger>
+                    <TabsTrigger value="reports" className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4" />
+                        Reports
+                    </TabsTrigger>
+                </TabsList>
 
-                                    <div className="flex flex-wrap items-center gap-4">
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <Calendar className="w-4 h-4 text-gray-500" />
-                                            <span>
-                                                {format(new Date(leave.startDate), 'MMM d, yyyy')} - {format(new Date(leave.endDate), 'MMM d, yyyy')}
-                                            </span>
-                                            <span className="text-gray-500">({leave.days} day{leave.days > 1 ? 's' : ''})</span>
-                                        </div>
-                                        <Badge variant="secondary">{leave.leaveType} Leave</Badge>
-                                        {getStatusBadge(leave.status)}
-                                    </div>
+                <TabsContent value="pending" className="mt-6">
+                    <RequestedLeaves />
+                </TabsContent>
 
-                                    {leave.reason && (
-                                        <div className="p-3 mt-2 text-sm bg-gray-50 rounded-md dark:bg-gray-800">
-                                            <p className="font-medium text-gray-700 dark:text-gray-300">Reason:</p>
-                                            <p className="text-gray-600 dark:text-gray-400">{leave.reason}</p>
-                                        </div>
-                                    )}
+                <TabsContent value="all-requests" className="mt-6">
+                    <AllLeaveRequests />
+                </TabsContent>
 
-                                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                                        <Clock className="w-4 h-4" />
-                                        <span>Applied on {format(new Date(leave.appliedDate), 'MMM d, yyyy h:mm a')}</span>
-                                    </div>
-                                </div>
+                <TabsContent value="calendar" className="mt-6">
+                    <TeamCalendar />
+                </TabsContent>
 
-                                <div className="flex flex-col gap-3 min-w-[200px]">
-                                    {leave.approvedBy && (
-                                        <div className="p-3 text-sm bg-gray-50 rounded-md dark:bg-gray-800">
-                                            <p className="font-medium text-gray-700 dark:text-gray-300">
-                                                {leave.status === 'approved' ? 'Approved' : 'Rejected'} by:
-                                            </p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <Avatar className="w-6 h-6">
-                                                    <AvatarImage src={leave.approvedBy.avatar} />
-                                                    <AvatarFallback>
-                                                        {leave.approvedBy.name.charAt(0)}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <span>{leave.approvedBy.name}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1 mt-1">
-                                                <Clock className="w-3 h-3" />
-                                                <span>{format(new Date(leave.approvedDate || ''), 'MMM d, yyyy h:mm a')}</span>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {isAdmin && leave.status === 'pending' && (
-                                        <div className="flex gap-2">
-                                            <Button
-                                                size="sm"
-                                                onClick={() => handleApprove(leave._id)}
-                                                disabled={!!processing}
-                                                className="flex-1 bg-green-500 text-green-900"
-                                            >
-                                                {processing === `approve-${leave._id}` ? (
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                ) : (
-                                                    'Approve'
-                                                )}
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="destructive"
-                                                onClick={() => handleReject(leave._id)}
-                                                disabled={!!processing}
-                                                className="flex-1"
-                                            >
-                                                {processing === `reject-${leave._id}` ? (
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                ) : (
-                                                    'Reject'
-                                                )}
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            )}
+                <TabsContent value="reports" className="mt-6">
+                    <LeaveReports />
+                </TabsContent>
+            </Tabs>
         </div>
-    )
-}
+    );
+};
+
+// Component to show employee's own leave requests
+const EmployeeLeaveRequests: React.FC<{ employeeId: string }> = ({ employeeId }) => {
+    if (!employeeId) return null;
+
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold">My Leave Requests</h2>
+            <p className="text-gray-500">Your leave request history will appear here.</p>
+        </div>
+    );
+};
+
+// Component to show all leave requests for admin
+const AllLeaveRequests: React.FC = () => {
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold">All Leave Requests</h2>
+            <p className="text-gray-500">All employee leave requests will appear here.</p>
+        </div>
+    );
+};
+
+// Component to show team calendar view
+const TeamCalendar: React.FC = () => {
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Team Calendar</h2>
+            <p className="text-gray-500">Team leave calendar will appear here.</p>
+        </div>
+    );
+};
+
+// Component to show leave reports
+const LeaveReports: React.FC = () => {
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Leave Reports</h2>
+            <p className="text-gray-500">Leave analytics and reports will appear here.</p>
+        </div>
+    );
+};
+
+export default LeavesPage;
