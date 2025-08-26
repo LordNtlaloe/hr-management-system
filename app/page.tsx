@@ -66,7 +66,7 @@ const EmployeeManagementHero = () => {
           size="lg"
           className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 px-8 py-6 text-lg"
         >
-          <Link href={user ? "/admin" : "/login"}>
+          <Link href={user ? "/dashboard" : "/login"}>
             {user ? "Go to Dashboard" : "Login"}
           </Link>
         </Button>

@@ -11,12 +11,12 @@ import { ObjectId } from "mongodb"
 
 declare module "next-auth" {
   interface User {
-    role?: "Employee"  | "Admin"
+    role?: "Employee" | "Admin"
   }
 
   interface Session {
     user: {
-      role: "Employee"  | "Admin"
+      role: "Employee" | "Admin"
     } & DefaultSession["user"]
   }
 }
@@ -24,7 +24,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     accessToken?: string
-    role?: "Employee"  | "Admin"
+    role?: "Employee" | "Admin"
   }
 }
 
@@ -141,33 +141,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
 
+    // auth.ts - Update the JWT callback to properly handle roles
     async jwt({ token, user, account }) {
       try {
         // Initial sign in
         if (user) {
           token.sub = user.id?.toString()
+          token.role = user.role || "Employee" // Default to Employee if no role is set
 
-          if (account?.provider !== "credentials") {
-            // OAuth user
-            if (user.email) {
-              const existingUser = await getUserByEmail(user.email)
-              if (existingUser) {
-                token.role = existingUser.role || "Employee"
-                token.sub = existingUser._id?.toString() || existingUser.id?.toString()
+          // For OAuth users, ensure they have a role in the database
+          if (account?.provider !== "credentials" && user.email) {
+            const existingUser = await getUserByEmail(user.email)
+            if (existingUser) {
+              token.role = existingUser.role || "Employee"
+              token.sub = existingUser._id?.toString() || existingUser.id?.toString()
 
-                if (!existingUser.role) {
-                  const collection = db.collection("users")
-                  await collection.updateOne(
-                    { email: user.email },
-                    { $set: { role: "Employee" } }
-                  )
-                  token.role = "Employee"
-                }
+              // Update role in DB if not set
+              if (!existingUser.role) {
+                const collection = db.collection("users")
+                await collection.updateOne(
+                  { email: user.email },
+                  { $set: { role: "Employee" } }
+                )
               }
             }
-          } else {
-            // Credentials user
-            token.role = user.role || "Employee"
           }
           return token
         }
@@ -175,25 +172,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Subsequent requests - refresh user data
         if (token.sub) {
           const existingUser = await getUserById(token.sub)
-
           if (existingUser) {
             token.role = existingUser.role || "Employee"
-
-            if (!existingUser.role) {
-              const collection = db.collection("users")
-              let query: any
-              if (ObjectId.isValid(existingUser._id)) {
-                query = { _id: new ObjectId(existingUser._id) }
-              } else {
-                query = { _id: existingUser._id }
-              }
-
-              await collection.updateOne(
-                query,
-                { $set: { role: "Employee" } }
-              )
-              token.role = "Employee"
-            }
           }
         }
 
@@ -203,7 +183,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
       }
     },
-
     async session({ session, token }) {
       try {
         if (token.sub && session.user) {

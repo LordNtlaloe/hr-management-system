@@ -26,7 +26,7 @@ export default function UserDropdown() {
           <Image
             width={44}
             height={44}
-            src={user?.image || "/images/user/owner.jpg"}
+            src={user?.image || "/profile.jpg"}
             alt={user?.name || "User"}
             className="rounded-full"
           />
