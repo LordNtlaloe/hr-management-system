@@ -5,7 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
-import { useSession } from "next-auth/react";
+import { useCurrentRole } from "@/hooks/use-current-role";
+
 import {
     ChevronDownIcon,
     MoreHorizontal,
@@ -20,6 +21,7 @@ import {
     ShieldIcon,
     BarChart2Icon,
 } from "lucide-react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 type NavItem = {
     name: string;
@@ -171,9 +173,9 @@ const filterNavItemsByRole = (items: NavItem[], role?: "Employee" | "Admin") =>
 // ---- SIDEBAR COMPONENT ---- //
 const AppSidebar: React.FC = () => {
     const { isExpanded, isHovered, isMobileOpen, setIsHovered } = useSidebar();
-    const { data: session, status } = useSession();
+    // const { data: session, status } = useCurrentUser();
     const pathname = usePathname();
-    const userRole = session?.user?.role || "Employee";
+    const userRole = useCurrentRole()
 
     const [openSubmenu, setOpenSubmenu] = useState<{ type: "main" | "others"; index: number } | null>(null);
 
