@@ -50,14 +50,15 @@ const EmployeeManagementHero = () => {
           {user ? (
             <>Welcome, <span className="text-blue-600 dark:text-blue-400">{user.name || 'User'}</span>!</>
           ) : (
-            <>Streamline Your <span className="text-blue-600 dark:text-blue-400">Workforce</span></>
+            <>Human Resources<span className="text-blue-600 dark:text-blue-400">&nbsp; Management System</span></>
           )}
         </h1>
 
         <p className="text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mb-8">
           {user
             ? "Access your dashboard to manage your team efficiently."
-            : "Secure employee management system for modern organizations."
+            : ""
+	    
           }
         </p>
 

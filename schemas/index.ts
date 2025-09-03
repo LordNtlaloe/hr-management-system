@@ -25,23 +25,6 @@ export const NewPasswordSchema = z.object({
 
 
 // 👤 Employee Schema
-export const EmployeeSchema = z.object({
-    first_name: z.string().min(1, "First name is required"),
-    last_name: z.string().min(1, "Last name is required"),
-    email: z.string().email("Invalid email address"),
-    phone: z.string().min(10, "Phone number must be at least 10 digits"),
-    department_id: z.string().min(1, "Department is required"),
-    position_id: z.string().min(1, "Position is required"),
-    manager_id: z.string().optional(),
-    hire_date: z.date(),
-    salary: z.coerce.number().min(0, "Salary must be positive"),
-    status: z.enum(["active", "on-leave", "terminated"]).default("active"),
-    skills: z.string().optional(),
-    date_of_birth: z.date().optional(),
-    address: z.string().optional(),
-    nationality: z.string().optional(),
-});
-
 
 // 📝 Leave Request Schema
 export const LeaveRequestSchema = z.object({
@@ -148,3 +131,85 @@ export const TerminationSchema = z.object({
     severance: z.coerce.number().min(0, "Severance must be positive").optional(),
     exitInterview: z.string().optional(),
 });
+
+
+// ==========================
+// Basic Employee Schema
+// ==========================
+export const EmployeeSchema = z.object({
+    first_name: z.string().min(1, "First name is required"),
+    last_name: z.string().min(1, "Last name is required"),
+    email: z.string().email("Invalid email address"),
+    phone: z.string().min(10, "Phone number must be at least 10 digits"),
+    department_id: z.string().min(1, "Department is required"),
+    position_id: z.string().min(1, "Position is required"),
+    manager_id: z.string().min(1, "Manager is required"),
+    hire_date: z.string().min(1, "Hire date is required"), // Keep as string for form input
+    salary: z.number().min(0, "Salary must be positive"),
+    status: z.enum(["active", "on-leave", "terminated"]),
+    date_of_birth: z.string().min(1, "Date of birth is required"), // Keep as string for form input
+    gender: z.enum(["male", "female"]),
+    nationality: z.string().min(1, "Nationality is required"),
+    employment_number: z.string().min(1, "Employment number is required"),
+    qualifications: z.string().min(1, "Qualifications are required"),
+    physical_address: z.string().min(1, "Physical address is required"),
+});
+
+// ==========================
+// Employee Details Schema
+// ==========================
+// schemas/index.ts
+export const EmployeeDetailsSchema = z.object({
+    employee_id: z.string(),
+    address: z.object({
+        country: z.string(),
+        city_state: z.string(),
+        postal_code: z.string(),
+        street_address: z.string(),
+        tax_id: z.string().optional(),
+    }),
+    emergency_contact: z.object({
+        name: z.string(),
+        relationship: z.string(),
+        phone: z.string(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+    }),
+    banking_info: z.object({
+        bank_name: z.string(),
+        account_number: z.string(),
+        routing_number: z.string().optional(),
+        account_type: z.enum(["checking", "savings"]),
+    }),
+    additional_info: z.object({
+        marital_status: z.enum(["single", "married", "divorced", "widowed"]),
+        spouse_name: z.string().optional(),
+        children_count: z.number(),
+        next_of_kin: z.string().optional(),
+        medical_conditions: z.string().optional(),
+        allergies: z.string().optional(),
+        notes: z.string().optional(),
+    }),
+});
+
+// 👇 Notice `.deepPartial()` instead of just `.partial()`
+
+// Partial schema for updates
+export const UpdateEmployeeDetailsSchema = EmployeeDetailsSchema.partial().extend({
+    employee_id: z.string().min(1, "Employee ID is required"),
+});
+
+// Individual section schemas
+export const AddressSchema = EmployeeDetailsSchema.shape.address;
+export const EmergencyContactSchema = EmployeeDetailsSchema.shape.emergency_contact;
+export const BankingInfoSchema = EmployeeDetailsSchema.shape.banking_info;
+export const AdditionalInfoSchema = EmployeeDetailsSchema.shape.additional_info;
+
+// Export Types
+export type EmployeeFormValues = z.infer<typeof EmployeeSchema>;
+export type EmployeeDetailsFormValues = z.infer<typeof EmployeeDetailsSchema>;
+export type UpdateEmployeeDetailsFormValues = z.infer<typeof UpdateEmployeeDetailsSchema>;
+export type AddressFormValues = z.infer<typeof AddressSchema>;
+export type EmergencyContactFormValues = z.infer<typeof EmergencyContactSchema>;
+export type BankingInfoFormValues = z.infer<typeof BankingInfoSchema>;
+export type AdditionalInfoFormValues = z.infer<typeof AdditionalInfoSchema>;
