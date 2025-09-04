@@ -126,11 +126,53 @@ export default function EmployeeCreationForm() {
 
   // -------------------- Step Handlers --------------------
   const handleNextStep = async () => {
+    // First, let's check the current form values
+    const currentValues = employeeForm.getValues();
+    console.log("Current form values:", currentValues);
+
+    // Check form state before validation
+    console.log("Form state before validation:", {
+      isValid: employeeForm.formState.isValid,
+      errors: employeeForm.formState.errors,
+      touchedFields: employeeForm.formState.touchedFields,
+      dirtyFields: employeeForm.formState.dirtyFields,
+    });
+
+    // Try validating all fields first
     const isValid = await employeeForm.trigger();
-    if (isValid) setCurrentStep(2);
+
+    // Check form state after validation
+    console.log("Form state after validation:", {
+      isValid: employeeForm.formState.isValid,
+      errors: employeeForm.formState.errors,
+      isValidating: employeeForm.formState.isValidating,
+    });
+
+    console.log("Trigger result:", isValid);
+
+    if (isValid) {
+      setCurrentStep(2);
+    } else {
+      // Force a re-render to show any errors
+      employeeForm.formState.errors &&
+        Object.keys(employeeForm.formState.errors).forEach((key) => {
+          console.log(
+            `Error for ${key}:`,
+            employeeForm.formState.errors[
+              key as keyof typeof employeeForm.formState.errors
+            ]
+          );
+        });
+    }
   };
 
   const handlePreviousStep = () => setCurrentStep(1);
+
+  // Temporary function to test step change without validation
+  const handleNextStepWithoutValidation = () => {
+    console.log("Skipping validation, moving to step 2");
+    setCurrentStep(2);
+  };
 
   const handleFinalSubmit = async () => {
     setLoading(true);
@@ -176,6 +218,7 @@ export default function EmployeeCreationForm() {
           positions={positions}
           employees={employees}
           handleNextStep={handleNextStep}
+          handleNextStepWithoutValidation={handleNextStepWithoutValidation}
           router={router}
         />
       )}
@@ -239,6 +282,7 @@ function EmployeeBasicForm({
   positions,
   employees,
   handleNextStep,
+  handleNextStepWithoutValidation,
   router,
 }: {
   employeeForm: ReturnType<typeof useForm<EmployeeFormValues>>;
@@ -246,6 +290,7 @@ function EmployeeBasicForm({
   positions: Position[];
   employees: Employee[];
   handleNextStep: () => void;
+  handleNextStepWithoutValidation: () => void;
   router: ReturnType<typeof useRouter>;
 }) {
   return (
@@ -287,6 +332,21 @@ function EmployeeBasicForm({
                 )}
               />
 
+              {/* Employment Number */}
+              <FormField
+                control={employeeForm.control}
+                name="employment_number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Employment Number</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="e.g., EMP001" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Gender */}
               <FormField
                 control={employeeForm.control}
@@ -307,6 +367,40 @@ function EmployeeBasicForm({
                           <SelectItem value="female">Female</SelectItem>
                         </SelectContent>
                       </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Email */}
+              <FormField
+                control={employeeForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="email"
+                        placeholder="john.doe@company.com"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Phone */}
+              <FormField
+                control={employeeForm.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="+1 (555) 123-4567" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -371,6 +465,145 @@ function EmployeeBasicForm({
                 )}
               />
 
+              {/* Manager */}
+              <FormField
+                control={employeeForm.control}
+                name="manager_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Manager (Optional)</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Manager" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employees.map((emp) => (
+                            <SelectItem key={emp._id} value={emp._id}>
+                              {emp.first_name} {emp.last_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Hire Date */}
+              <FormField
+                control={employeeForm.control}
+                name="hire_date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Hire Date</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Date of Birth */}
+              <FormField
+                control={employeeForm.control}
+                name="date_of_birth"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date of Birth</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Salary */}
+              <FormField
+                control={employeeForm.control}
+                name="salary"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Salary</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        placeholder="50000"
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Status */}
+              <FormField
+                control={employeeForm.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="terminated">Terminated</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Physical Address */}
+              <FormField
+                control={employeeForm.control}
+                name="physical_address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Physical Address</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="123 Main St, City, State"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Nationality */}
+              <FormField
+                control={employeeForm.control}
+                name="nationality"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nationality</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="e.g., American" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               {/* Qualifications */}
               <FormField
                 control={employeeForm.control}
@@ -397,6 +630,13 @@ function EmployeeBasicForm({
                 onClick={() => router.push("/employees")}
               >
                 Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleNextStepWithoutValidation}
+                variant="secondary"
+              >
+                Next (Skip Validation)
               </Button>
               <Button type="button" onClick={handleNextStep}>
                 Next: Additional Details
@@ -429,35 +669,268 @@ function EmployeeDetailsForm({
       <CardContent>
         <Form {...detailsForm}>
           <form className="space-y-6">
-            {/* Address Example */}
-            <h3 className="text-lg font-medium">Address Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={detailsForm.control}
-                name="address.country"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Country</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={detailsForm.control}
-                name="address.city_state"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>City/State</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* Address Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Address Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={detailsForm.control}
+                  name="address.country"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Country</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., United States" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="address.city_state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City/State</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., New York, NY" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="address.postal_code"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Postal Code</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., 10001" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="address.street_address"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Street Address</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., 123 Main St" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="address.tax_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tax ID</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., 123-45-6789" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Emergency Contact */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Emergency Contact</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={detailsForm.control}
+                  name="emergency_contact.name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Jane Doe" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="emergency_contact.relationship"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Relationship</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Spouse" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="emergency_contact.phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Phone</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="e.g., +1 (555) 987-6543"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="emergency_contact.email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Contact Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="email"
+                          placeholder="jane.doe@email.com"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Banking Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Banking Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={detailsForm.control}
+                  name="banking_info.bank_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bank Name</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="e.g., First National Bank"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="banking_info.account_number"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Account Number</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., 1234567890" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="banking_info.routing_number"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Routing Number</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., 021000021" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="banking_info.account_type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Account Type</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Account Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="checking">Checking</SelectItem>
+                            <SelectItem value="savings">Savings</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            {/* Additional Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Additional Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={detailsForm.control}
+                  name="additional_info.marital_status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Marital Status</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Marital Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="single">Single</SelectItem>
+                            <SelectItem value="married">Married</SelectItem>
+                            <SelectItem value="divorced">Divorced</SelectItem>
+                            <SelectItem value="widowed">Widowed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="additional_info.children_count"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Number of Children</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          min="0"
+                          onChange={(e) =>
+                            field.onChange(Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-4 pt-4">
