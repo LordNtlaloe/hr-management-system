@@ -38,7 +38,7 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
   const [events, setEvents] = useState<LeaveEvent[]>([]);
   const calendarRef = useRef<FullCalendar>(null);
   const { isOpen, openModal, closeModal } = useModal();
-  const role = useCurrentRole();
+  const { role } = useCurrentRole();
   const isEmployee = role === "Employee";
 
   useEffect(() => {

@@ -10,7 +10,7 @@ interface RoleGateProps {
 }
 
 export default function RoleGate({ children, allowedRole }: RoleGateProps) {
-    const role = useCurrentRole()
+    const {role} = useCurrentRole()
     
     if (!allowedRole || (allowedRole !== "Admin" && allowedRole !== "Manager")) {
         return(
