@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -69,6 +68,7 @@ export default function EmployeeCreationForm() {
       nationality: "",
     },
   });
+
   const detailsForm = useForm<Partial<EmployeeDetailsFormValues>>({
     defaultValues: {
       address: {
@@ -214,7 +214,9 @@ function Step({
 }) {
   return (
     <div
-      className={`flex items-center ${active ? "text-primary" : "text-muted-foreground"}`}
+      className={`flex items-center ${
+        active ? "text-primary" : "text-muted-foreground"
+      }`}
     >
       <div
         className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
@@ -390,12 +392,15 @@ function EmployeeBasicForm({
 
             <div className="flex justify-end gap-4 pt-4">
               <Button
+                type="button"
                 variant="outline"
                 onClick={() => router.push("/employees")}
               >
                 Cancel
               </Button>
-              <Button onClick={handleNextStep}>Next: Additional Details</Button>
+              <Button type="button" onClick={handleNextStep}>
+                Next: Additional Details
+              </Button>
             </div>
           </form>
         </Form>
@@ -456,10 +461,18 @@ function EmployeeDetailsForm({
             </div>
 
             <div className="flex justify-end gap-4 pt-4">
-              <Button variant="outline" onClick={handlePreviousStep}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreviousStep}
+              >
                 Back to Basic Info
               </Button>
-              <Button onClick={handleFinalSubmit} disabled={loading}>
+              <Button
+                type="button"
+                onClick={handleFinalSubmit}
+                disabled={loading}
+              >
                 {loading ? "Creating..." : "Create Employee"}
               </Button>
             </div>
