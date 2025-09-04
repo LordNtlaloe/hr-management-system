@@ -50,6 +50,40 @@ export const getEmployeeById = async (id: string) => {
     }
 }
 
+export const getEmployeeByUserId = async (userId: string) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database?.collection("employees");
+        const employee = await collection.findOne({ userId: new ObjectId(userId) });
+        if (!employee) return null;
+
+        const positionCollection = await database?.collection("positions");
+        const departmentCollection = await database?.collection("departments");
+
+        const position = employee.positionId
+            ? await positionCollection.findOne({ _id: new ObjectId(employee.positionId) })
+            : null;
+        const department = employee.departmentId
+            ? await departmentCollection.findOne({ _id: new ObjectId(employee.departmentId) })
+            : null;
+
+        const managerName = employee.managerId
+            ? await getEmployeeName(employee.managerId)
+            : null;
+
+        return {
+            ...employee,
+            _id: employee._id.toString(),
+            position_title: position?.position_title || "Unknown",
+            department_name: department?.department_name || "Unknown",
+            manager_name: managerName
+        };
+    } catch (error: any) {
+        console.error("Error fetching employee by userId:", error.message);
+        return { error: error.message };
+    }
+};
+
 export const updateEmployee = async (id: string, updateData: Partial<z.infer<typeof EmployeeSchema>>) => {
     if (!dbConnection) await init();
     try {
@@ -86,7 +120,7 @@ export const getAllEmployees = async (includeInactive = false) => {
         const collection = await database?.collection("employees");
         const positionCollection = await database?.collection("positions");
         const departmentCollection = await database?.collection("departments");
-        
+
         const filter = includeInactive ? {} : { isActive: { $ne: false } };
         const employees = await collection.find(filter).toArray();
 
@@ -96,22 +130,22 @@ export const getAllEmployees = async (includeInactive = false) => {
                 // Try both field name variations to handle inconsistencies
                 const positionId = employee.positionId || employee.position_id;
                 const departmentId = employee.departmentId || employee.department_id;
-                
-                const position = positionId ? await positionCollection.findOne({ 
-                    _id: new ObjectId(positionId) 
+
+                const position = positionId ? await positionCollection.findOne({
+                    _id: new ObjectId(positionId)
                 }) : null;
-                
-                const department = departmentId ? await departmentCollection.findOne({ 
-                    _id: new ObjectId(departmentId) 
+
+                const department = departmentId ? await departmentCollection.findOne({
+                    _id: new ObjectId(departmentId)
                 }) : null;
-                
+
                 return {
                     ...employee,
                     _id: employee._id.toString(),
                     // Ensure these field names match what your columns expect
                     position_title: position?.position_title || "Unknown",
                     department_name: department?.department_name || "Unknown",
-                    manager_name: employee.managerId ? 
+                    manager_name: employee.managerId ?
                         await getEmployeeName(employee.managerId) : null,
                     // Include the original IDs for reference
                     positionId: positionId,
@@ -129,8 +163,8 @@ export const getAllEmployees = async (includeInactive = false) => {
 
 async function getEmployeeName(employeeId: string) {
     const collection = await database?.collection("employees");
-    const employee = await collection.findOne({ 
-        _id: new ObjectId(employeeId) 
+    const employee = await collection.findOne({
+        _id: new ObjectId(employeeId)
     });
     return employee ? `${employee.firstName} ${employee.lastName}` : null;
 }
@@ -139,11 +173,11 @@ export const getEmployeesByDepartment = async (departmentId: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("employees");
-        const employees = await collection.find({ 
+        const employees = await collection.find({
             departmentId: departmentId,
             isActive: { $ne: false }
         }).toArray();
-        
+
         return employees.map((employee: any) => ({
             ...employee,
             _id: employee._id.toString()
