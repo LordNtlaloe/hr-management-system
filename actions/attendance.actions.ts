@@ -47,7 +47,7 @@ export const getDailyAttendanceReport = async (date: Date) => {
     }
 };
 
-// Monthly summary for department or company-wide
+// Monthly summary for section or company-wide
 export const getMonthlyAttendanceSummary = async (year: number, month: number, departmentId?: string) => {
     if (!dbConnection) await init();
     try {

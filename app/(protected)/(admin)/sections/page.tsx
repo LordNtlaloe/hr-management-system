@@ -6,29 +6,30 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { columns } from "@/components/dashboard/departments/department-columnts"
-import { getAllDepartments } from "@/actions/department.actions"
-import { Department } from "@/types"
+import { columns } from "@/components/dashboard/sections/sections-columnts"
+import { getAllSections } from "@/actions/section.actions"
+import { Section } from "@/types"
+import Link from "next/link"
 
-export default function DepartmentsPage() {
-    const [departments, setDepartments] = useState<Department[]>([])
+export default function SectionsPage() {
+    const [sections, setSections] = useState<Section[]>([])
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
     useEffect(() => {
-        const fetchDepartments = async () => {
-            const response = await getAllDepartments()
-            setDepartments(response)
+        const fetchSections = async () => {
+            const response = await getAllSections()
+            setSections(response)
         }
-        fetchDepartments()
+        fetchSections()
     }, [])
 
     const table = useReactTable({
-        data: departments,
+        data: sections,
         columns: [
             {
-                accessorKey: "department_name",  // matches department_name
-                header: "Department Name",
+                accessorKey: "section_name",  // matches section_name
+                header: "Section Name",
             },
             {
                 accessorKey: "description",  // matches description
@@ -51,11 +52,14 @@ export default function DepartmentsPage() {
         <div className="w-full">
             <div className="flex items-center py-4">
                 <Input
-                    placeholder="Filter departments..."
-                    value={(table.getColumn("department_name")?.getFilterValue() as string) ?? ""}
-                    onChange={(event) => table.getColumn("department_name")?.setFilterValue(event.target.value)}
+                    placeholder="Filter sections..."
+                    value={(table.getColumn("section_name")?.getFilterValue() as string) ?? ""}
+                    onChange={(event) => table.getColumn("section_name")?.setFilterValue(event.target.value)}
                     className="max-w-sm"
                 />
+                <Button>
+                    <Link href="/sections/create">Add New Section</Link>
+                </Button>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="ml-auto">

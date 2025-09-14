@@ -92,7 +92,7 @@ export default function AttendanceReports() {
                 const trendData = Array.isArray(timeSummary) ? timeSummary : []
                 setAttendanceTrend(trendData)
 
-                // 4️⃣ Department-wise attendance
+                // 4️⃣ Section-wise attendance
                 const employees = await getAllEmployees()
                 if (!Array.isArray(employees)) {
                     console.error("Failed to fetch employees:", employees.error)
@@ -100,7 +100,7 @@ export default function AttendanceReports() {
                 } else {
                     const deptMap: any = {}
                     employees.forEach((emp: any) => {
-                        const deptName = emp.department?.name || "Unknown"
+                        const deptName = emp.section?.name || "Unknown"
                         if (!deptMap[deptName]) deptMap[deptName] = { dept: deptName, present: 0, total: 0 }
                         deptMap[deptName].total += 1
                         if (trendData.some((t: any) => Array.isArray(t.employeeIds) && t.employeeIds.includes(emp._id))) {
@@ -190,9 +190,9 @@ export default function AttendanceReports() {
                 </CardContent>
             </Card>
 
-            {/* Department-wise Attendance */}
+            {/* Section-wise Attendance */}
             <Card>
-                <CardHeader><CardTitle>Department Attendance</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Section Attendance</CardTitle></CardHeader>
                 <CardContent className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={deptAttendance}>

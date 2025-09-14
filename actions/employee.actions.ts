@@ -63,7 +63,7 @@ export const getEmployeeByUserId = async (userId: string) => {
         const position = employee.positionId
             ? await positionCollection.findOne({ _id: new ObjectId(employee.positionId) })
             : null;
-        const department = employee.departmentId
+        const section = employee.departmentId
             ? await departmentCollection.findOne({ _id: new ObjectId(employee.departmentId) })
             : null;
 
@@ -75,7 +75,7 @@ export const getEmployeeByUserId = async (userId: string) => {
             ...employee,
             _id: employee._id.toString(),
             position_title: position?.position_title || "Unknown",
-            department_name: department?.department_name || "Unknown",
+            department_name: section?.department_name || "Unknown",
             manager_name: managerName
         };
     } catch (error: any) {
@@ -124,7 +124,7 @@ export const getAllEmployees = async (includeInactive = false) => {
         const filter = includeInactive ? {} : { isActive: { $ne: false } };
         const employees = await collection.find(filter).toArray();
 
-        // Enhance employees with department and position names
+        // Enhance employees with section and position names
         const enhancedEmployees = await Promise.all(
             employees.map(async (employee: any) => {
                 // Try both field name variations to handle inconsistencies
@@ -135,7 +135,7 @@ export const getAllEmployees = async (includeInactive = false) => {
                     _id: new ObjectId(positionId)
                 }) : null;
 
-                const department = departmentId ? await departmentCollection.findOne({
+                const section = departmentId ? await departmentCollection.findOne({
                     _id: new ObjectId(departmentId)
                 }) : null;
 
@@ -144,7 +144,7 @@ export const getAllEmployees = async (includeInactive = false) => {
                     _id: employee._id.toString(),
                     // Ensure these field names match what your columns expect
                     position_title: position?.position_title || "Unknown",
-                    department_name: department?.department_name || "Unknown",
+                    department_name: section?.department_name || "Unknown",
                     manager_name: employee.managerId ?
                         await getEmployeeName(employee.managerId) : null,
                     // Include the original IDs for reference
@@ -183,7 +183,7 @@ export const getEmployeesByDepartment = async (departmentId: string) => {
             _id: employee._id.toString()
         }));
     } catch (error: any) {
-        console.error("Error fetching department employees:", error.message);
+        console.error("Error fetching section employees:", error.message);
         return { error: error.message };
     }
 }

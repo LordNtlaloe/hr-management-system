@@ -44,7 +44,7 @@ interface Employee {
   email: string;
   avatar?: string;
   position?: string;
-  department?: string;
+  section?: string;
 }
 interface LeaveRequest {
   _id: string;
@@ -397,11 +397,11 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
                           <span>{leave.employeeId.email}</span>
                         </div>
                         {(leave.employeeId.position ||
-                          leave.employeeId.department) && (
+                          leave.employeeId.section) && (
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {leave.employeeId.department && (
+                            {leave.employeeId.section && (
                               <Badge variant="outline" className="text-xs">
-                                {leave.employeeId.department}
+                                {leave.employeeId.section}
                               </Badge>
                             )}
                             {leave.employeeId.position && (

@@ -82,23 +82,23 @@ export const getAllPositions = async (includeInactive = false) => {
 
         const positions = await collection.find(filter).toArray();
 
-        // Fetch department names for each position
+        // Fetch section names for each position
         const positionsWithDepartments = await Promise.all(
             positions.map(async (position: any) => {
                 if (position.department_id) {
-                    const department = await departmentCollection.findOne({
+                    const section = await departmentCollection.findOne({
                         _id: new ObjectId(position.department_id)
                     });
                     return {
                         ...position,
                         _id: position._id.toString(),
-                        department_name: department?.department_name || "No Department"
+                        department_name: section?.department_name || "No Section"
                     };
                 }
                 return {
                     ...position,
                     _id: position._id.toString(),
-                    department_name: "No Department"
+                    department_name: "No Section"
                 };
             })
         );
@@ -119,11 +119,11 @@ export const getPositionWithDepartment = async (id: string) => {
         const position = await positionCollection.findOne({ _id: new ObjectId(id) });
         if (!position) return null;
 
-        const department = await departmentCollection.findOne({ _id: new ObjectId(position.departemnt_id) });
+        const section = await departmentCollection.findOne({ _id: new ObjectId(position.departemnt_id) });
 
-        return { ...position, department };
+        return { ...position, section };
     } catch (error: any) {
-        console.error("Error fetching position with department:", error.message);
+        console.error("Error fetching position with section:", error.message);
         return { error: error.message };
     }
 }
@@ -138,7 +138,7 @@ export const updatePositionDepartment = async (positionId: string, newDepartment
         );
         return { modifiedCount: result.modifiedCount, success: true };
     } catch (error: any) {
-        console.error("Error updating position department:", error.message);
+        console.error("Error updating position section:", error.message);
         return { error: error.message };
     }
 }

@@ -8,12 +8,12 @@ import useDebounce from '@/hooks/use-debounce';
 interface EmployeeFiltersProps {
   filters: {
     search: string;
-    department: string | null;
+    section: string | null;
     status: string | null;
   };
   onChange: (filters: {
     search: string;
-    department: string | null;
+    section: string | null;
     status: string | null;
   }) => void;
 }
@@ -36,7 +36,7 @@ const EmployeeFilters: React.FC<EmployeeFiltersProps> = ({ filters, onChange }) 
   };
 
   const handleReset = () => {
-    const resetFilters = { search: '', department: null, status: null };
+    const resetFilters = { search: '', section: null, status: null };
     setLocalFilters(resetFilters);
     onChange(resetFilters);
   };
@@ -54,8 +54,8 @@ const EmployeeFilters: React.FC<EmployeeFiltersProps> = ({ filters, onChange }) 
 
         <div>
           <Select
-            value={localFilters.department ?? ""}
-            onValueChange={(value) => handleChange('department', value || null)}
+            value={localFilters.section ?? ""}
+            onValueChange={(value) => handleChange('section', value || null)}
           >
             <SelectTrigger>
               <SelectValue placeholder="All Departments" />

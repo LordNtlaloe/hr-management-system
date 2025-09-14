@@ -12,7 +12,7 @@ Use this checklist to track your development progress.
 - [⏳] Delete (soft-delete) employee
 - [⏳] Reactivate employee
 - [✅] List all employees
-- [⏳] Filter employees by department
+- [⏳] Filter employees by section
 - [⏳] Assign manager to employee
 - [⏳] Set employee status (active, on-leave, terminated)
 - [⏳] Upload employee avatar/photo
@@ -29,18 +29,18 @@ Use this checklist to track your development progress.
 
 ---
 
-## 🧑‍💼 Position & Department Management
+## 🧑‍💼 Position & Section Management
 
 - [✅] Create/edit/delete positions
 - [✅] Create/edit/delete departments
 - [✅] Assign position to employee
-- [✅] Assign department to employee
+- [✅] Assign section to employee
 
 ---
 
 ## 📊 Reports & Analytics
 
-- [ ] Employee headcount by department
+- [ ] Employee headcount by section
 - [ ] Monthly new hires and exits
 - [ ] Leave statistics
 - [ ] Salary breakdown

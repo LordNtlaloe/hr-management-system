@@ -24,7 +24,7 @@ interface Employee {
     first_name: string;
     last_name: string;
     position?: string;
-    department?: string;
+    section?: string;
     email?: string;
     phone?: string;
     image?: string;
@@ -130,7 +130,7 @@ export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardP
                                 </p>
                                 <div className="hidden h-3.5 w-px bg-gray-300 dark:bg-gray-700 xl:block"></div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    {employee.department || "Department not set"}
+                                    {employee.section || "Section not set"}
                                 </p>
                             </div>
                         </div>
@@ -280,11 +280,11 @@ export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardP
                                         />
                                     </div>
                                     <div className="col-span-2 lg:col-span-1">
-                                        <Label htmlFor="department">Department</Label>
+                                        <Label htmlFor="section">Section</Label>
                                         <Input
                                             type="text"
-                                            defaultValue={employee.department || ""}
-                                            id="department"
+                                            defaultValue={employee.section || ""}
+                                            id="section"
                                         />
                                     </div>
                                 </div>

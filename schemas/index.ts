@@ -63,9 +63,9 @@ export const PerformanceReviewSchema = z.object({
 });
 
 
-// 🏢 Department Schema
-export const DepartmentSchema = z.object({
-    department_name: z.string().min(1, "Department name is required"),
+// 🏢 Section Schema
+export const SectionSchema = z.object({
+    section_name: z.string().min(1, "Section name is required"),
     description: z.string().optional(),
 });
 
@@ -80,7 +80,7 @@ export const MinistriesSchema = z.object({
 // 📌 Position Schema
 export const PositionSchema = z.object({
     position_title: z.string().min(1, "Position title is required"),
-    department_id: z.string().min(1, "Department ID is required"),
+    section_id: z.string().min(1, "Section ID is required"),
     salary_grade: z.string().optional(),
     description: z.string().optional(),
 });
@@ -141,7 +141,7 @@ export const EmployeeSchema = z.object({
     last_name: z.string().min(1, "Last name is required"),
     email: z.string().email("Invalid email address"),
     phone: z.string().min(10, "Phone number must be at least 10 digits"),
-    department_id: z.string().min(1, "Department is required"),
+    section_id: z.string().min(1, "Section is required"),
     position_id: z.string().min(1, "Position is required"),
     manager_id: z.string().min(1, "Manager is required"),
     hire_date: z.string().min(1, "Hire date is required"), // Keep as string for form input

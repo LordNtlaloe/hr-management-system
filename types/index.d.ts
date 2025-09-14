@@ -1,8 +1,8 @@
 import { User } from "next-auth";
 
-export type Department = {
+export type Section = {
     _id: string;
-    department_name: string;
+    section_name: string;
     createdAt: string;
     updatedAt: string;
 };
@@ -26,6 +26,15 @@ export type Position = {
 import { User } from "next-auth";
 
 export type Employee = {
+    employment_number: string;
+    gender: string;
+    section_name: string;
+    position_title: string;
+    manager_name: string;
+    qualifications: string;
+    emergency_contact: any;
+    banking_info: any;
+    additional_info: any;
     _id: string;
     user_id: string | User; // Can be either user ID string or User object
     first_name: string;
@@ -33,7 +42,7 @@ export type Employee = {
     email: string;
     phone: string;
     image?: string;
-    department_id: string;
+    section_id: string;
     position_id: string;
     manager_id?: string;
     hire_date: Date;
@@ -53,7 +62,7 @@ export type EmployeeInput = {
     last_name: string;
     email: string;
     phone: string;
-    department_id: string;
+    section_id: string;
     position_id: string;
     manager_id?: string;
     hire_date: Date;

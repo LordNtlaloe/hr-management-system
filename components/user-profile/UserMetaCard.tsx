@@ -33,7 +33,7 @@ export default function EmployeeMetaCard() {
     ["Gender", employee.gender],
     ["Email", employee.email],
     ["Phone", employee.phone],
-    ["Department", employee.department_name],
+    ["Section", employee.department_name],
     ["Position", employee.position_title],
     ["Manager", employee.manager_name],
     ["Hire Date", employee.hire_date],

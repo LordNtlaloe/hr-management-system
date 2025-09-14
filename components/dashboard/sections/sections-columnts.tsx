@@ -3,9 +3,9 @@ import { ArrowUpDown, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Department } from "@/types"
+import { Section } from "@/types"
 
-export const columns: ColumnDef<Department>[] = [
+export const columns: ColumnDef<Section>[] = [
     {
         id: "select",
         header: ({ table }) => (
@@ -26,14 +26,14 @@ export const columns: ColumnDef<Department>[] = [
         enableHiding: false,
     },
     {
-        accessorKey: "department_name",
+        accessorKey: "section_name",
         header: ({ column }) => (
             <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}>
-                Department Name
+                Section Name
                 <ArrowUpDown />
             </Button>
         ),
-        cell: ({ row }) => <div>{row.getValue("department_name")}</div>,
+        cell: ({ row }) => <div>{row.getValue("section_name")}</div>,
     },
     {
         accessorKey: "employee_count",
@@ -49,7 +49,7 @@ export const columns: ColumnDef<Department>[] = [
         id: "actions",
         enableHiding: false,
         cell: ({ row }) => {
-            const department = row.original
+            const section = row.original
             return (
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -60,10 +60,10 @@ export const columns: ColumnDef<Department>[] = [
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem onClick={() => window.location.href = `/departments/edit/${department._id}`}>
+                        <DropdownMenuItem onClick={() => window.location.href = `/sections/edit/${section._id}`}>
                             Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleDelete(department)}>
+                        <DropdownMenuItem onClick={() => handleDelete(section)}>
                             Delete
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -73,13 +73,13 @@ export const columns: ColumnDef<Department>[] = [
     },
 ]
 
-function handleDelete(department: Department) {
+function handleDelete(section: Section) {
     // Confirm delete action
-    const confirmDelete = window.confirm(`Are you sure you want to delete the department: ${department.department_name}?`)
+    const confirmDelete = window.confirm(`Are you sure you want to delete the section: ${section.section_name}?`)
     
     if (confirmDelete) {
         // Call your delete API here and update the table
-        console.log(`Deleting department: ${department.department_name}`)
-        // Example: deleteDepartmentAPI(department._id).then(() => { updateTable() })
+        console.log(`Deleting section: ${section.section_name}`)
+        // Example: deleteSectionAPI(section._id).then(() => { updateTable() })
     }
 }

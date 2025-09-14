@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Image from "next/image";
 import { getEmployeeById } from "@/actions/employee.actions";
-import { getDepartmentById } from "@/actions/department.actions";
+import { getSectionById } from "@/actions/section.actions";
 import { getPositionById } from "@/actions/position.actions";
-import { Employee, Department, Position } from "@/types";
+import { Employee, Section, Position } from "@/types";
 
 interface EmployeeProfileCardProps {
     employeeId: string;
@@ -18,7 +18,7 @@ interface EmployeeProfileCardProps {
 export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardProps) {
     const { isOpen, openModal, closeModal } = useModal();
     const [employee, setEmployee] = useState<Employee | null>(null);
-    const [department, setDepartment] = useState<Department | null>(null);
+    const [section, setsection] = useState<Section | null>(null);
     const [position, setPosition] = useState<Position | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -34,14 +34,14 @@ export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardP
             }
             setEmployee(employeeResponse);
 
-            // Fetch department data if employee has department_id
-            if (employeeResponse.department_id) {
-                const departmentId = typeof employeeResponse.department_id === 'string'
-                    ? employeeResponse.department_id
-                    : employeeResponse.department_id._id;
+            // Fetch section data if employee has section_id
+            if (employeeResponse.section_id) {
+                const sectionId = typeof employeeResponse.section_id === 'string'
+                    ? employeeResponse.section_id
+                    : employeeResponse.section_id._id;
 
-                const departmentResponse = await getDepartmentById(departmentId);
-                setDepartment(departmentResponse);
+                const sectionResponse = await getSectionById(sectionId);
+                setsection(sectionResponse);
             }
 
             // Fetch position data if employee has position_id
@@ -70,10 +70,10 @@ export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardP
         closeModal();
     };
 
-    const getDepartmentName = () => {
-        if (department) return department.department_name;
-        if (employee && typeof employee.department_id === 'object') return employee.department_id;
-        return "Department not set";
+    const getsectionName = () => {
+        if (section) return section.section_name;
+        if (employee && typeof employee.section_id === 'object') return employee.section_id;
+        return "Section not set";
     };
 
     const getPositionName = () => {
@@ -109,7 +109,7 @@ export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardP
                                 </p>
                                 <div className="hidden h-3.5 w-px bg-gray-300 dark:bg-gray-700 xl:block"></div>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    {getDepartmentName()}
+                                    {getsectionName()}
                                 </p>
                             </div>
                         </div>
@@ -192,12 +192,12 @@ export default function EmployeeProfileCard({ employeeId }: EmployeeProfileCardP
                                         />
                                     </div>
                                     <div className="col-span-2 lg:col-span-1 space-y-2">
-                                        <Label htmlFor="department">Department</Label>
+                                        <Label htmlFor="section">Section</Label>
                                         <Input
-                                            id="department"
+                                            id="section"
                                             type="text"
-                                            defaultValue={getDepartmentName()}
-                                            name="department"
+                                            defaultValue={getsectionName()}
+                                            name="section"
                                         />
                                     </div>
                                 </div>

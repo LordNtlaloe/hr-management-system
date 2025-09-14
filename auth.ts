@@ -11,11 +11,15 @@ import { ObjectId } from "mongodb"
 
 declare module "next-auth" {
   interface User {
+    first_name: string,
+    last_name: string,
     role?: "Employee" | "Admin"
   }
 
   interface Session {
     user: {
+      first_name: string,
+      last_name: string,
       role: "Employee" | "Admin"
     } & DefaultSession["user"]
   }

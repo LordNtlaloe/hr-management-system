@@ -115,7 +115,7 @@ const adminOthersItems: NavItem[] = [
     roles: ["Admin"],
     subItems: [
       { name: "Ministries", path: "/ministries" },
-      { name: "Departments", path: "/departments" },
+      { name: "Sections", path: "/sections" },
       { name: "Positions", path: "/positions" },
     ],
   },

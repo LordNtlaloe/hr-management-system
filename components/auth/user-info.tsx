@@ -23,7 +23,7 @@ export default function UserInfo({ user, label }: UserProps) {
         </div>
         <div className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
           <p>Name:</p>
-          <p>{user?.name}</p>
+          <p>{user?.first_name} {user?.last_name}</p>
         </div>
         <div className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
           <p>Email:</p>

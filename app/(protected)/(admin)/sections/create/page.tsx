@@ -14,27 +14,27 @@ import {
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import { DepartmentSchema } from "@/schemas"
-import { createDepartment } from "@/actions/department.actions"
+import { SectionSchema } from "@/schemas"
+import { createSection } from "@/actions/section.actions"
 
-type DepartmentFormValues = z.infer<typeof DepartmentSchema>
+type SectionFormValues = z.infer<typeof SectionSchema>
 
-export default function DepartmentPage() {
+export default function SectionPage() {
     const router = useRouter()
 
-    const form = useForm<DepartmentFormValues>({
-        resolver: zodResolver(DepartmentSchema),
+    const form = useForm<SectionFormValues>({
+        resolver: zodResolver(SectionSchema),
     })
 
-    async function onSubmit(values: DepartmentFormValues) {
+    async function onSubmit(values: SectionFormValues) {
         try {
-            const result = await createDepartment(values)
+            const result = await createSection(values)
 
             if (result.success) {
-                toast.success("Department created successfully")
-                router.push("/departments")
+                toast.success("Section created successfully")
+                router.push("/sections")
             } else {
-                toast.error(result.error || "Failed to create department")
+                toast.error(result.error || "Failed to create section")
             }
         } catch (error) {
             toast.error("An unexpected error occurred")
@@ -43,20 +43,20 @@ export default function DepartmentPage() {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-2xl font-bold">Add New Department</h1>
+            <h1 className="text-2xl font-bold">Add New Section</h1>
 
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
                     <div className="grid grid-cols-1 gap-6">
-                        {/* Department Name */}
+                        {/* Section Name */}
                         <FormField
                             control={form.control}
-                            name="department_name"  // updated to department_name
+                            name="section_name"  // updated to section_name
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>Department Name</FormLabel>
+                                    <FormLabel>Section Name</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="Marketing" {...field} />
+                                        <Input placeholder="Admin" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -71,7 +71,7 @@ export default function DepartmentPage() {
                                 <FormItem>
                                     <FormLabel>Description (Optional)</FormLabel>
                                     <FormControl>
-                                        <Input placeholder="Department focused on marketing strategies" {...field} />
+                                        <Input placeholder="Section focused on Admin and general management" {...field} />
                                     </FormControl>
                                     <FormMessage />
                                 </FormItem>
@@ -83,11 +83,11 @@ export default function DepartmentPage() {
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => router.push("/departments")}
+                            onClick={() => router.push("/sections")}
                         >
                             Cancel
                         </Button>
-                        <Button type="submit">Create Department</Button>
+                        <Button type="submit">Create Section</Button>
                     </div>
                 </form>
             </Form>

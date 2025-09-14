@@ -44,7 +44,7 @@ export const columns: ColumnDef<Position>[] = [
     },
     {
         accessorKey: "department_name",
-        header: "Department",
+        header: "Section",
         cell: ({ row }) => <div>{row.getValue("department_name")}</div>,
     },
     {

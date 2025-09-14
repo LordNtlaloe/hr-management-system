@@ -18,9 +18,9 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { createPosition } from "@/actions/position.actions"
-import { getAllDepartments } from "@/actions/department.actions"
+import { getAllSections } from "@/actions/section.actions"
 import { PositionSchema } from "@/schemas"  // Assuming you have a Zod schema for Position
-import { Department } from "@/types"
+import { Section } from "@/types"
 
 type PositionFormValues = z.infer<typeof PositionSchema>
 
@@ -30,14 +30,14 @@ export default function PositionPage() {
         resolver: zodResolver(PositionSchema),
     })
 
-    const [departments, setDepartments] = useState<Department[]>([])
+    const [sections, setSections] = useState<Section[]>([])
 
     useEffect(() => {
-        const fetchDepartments = async () => {
-            const response = await getAllDepartments()  // Fetch departments from your database
-            setDepartments(response)
+        const fetchSections = async () => {
+            const response = await getAllSections()  // Fetch sections from your database
+            setSections(response)
         }
-        fetchDepartments()
+        fetchSections()
     }, [])
 
     const salaryGrades = ["A1", "A2", "A3", "B1", "B2", "B3", "C1", "C2", "C3", "D1", "D2", "D3"];
@@ -126,30 +126,30 @@ export default function PositionPage() {
                             )}
                         />
 
-                        {/* Department Dropdown */}
+                        {/* Section Dropdown */}
                         <FormField
                             control={form.control}
-                            name="department_id"
+                            name="section_id"
                             render={({ field }) => (
                                 <FormItem>
-                                    <FormLabel>Department</FormLabel>
+                                    <FormLabel>Section</FormLabel>
                                     <FormControl>
-                                        {/* Custom Dropdown for Department */}
+                                        {/* Custom Dropdown for Section */}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
                                                 <Button variant="outline" className="w-full text-left">
                                                     {field.value ?
-                                                        departments.find((dept) => dept._id === field.value)?.department_name || "Select Department"
-                                                        : "Select Department"}
+                                                        sections.find((dept) => dept._id === field.value)?.section_name || "Select Section"
+                                                        : "Select Section"}
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
-                                                {departments.map((dept) => (
+                                                {sections.map((dept) => (
                                                     <DropdownMenuItem
                                                         key={dept._id}
-                                                        onClick={() => field.onChange(dept._id)} // Set the department ID when clicked
+                                                        onClick={() => field.onChange(dept._id)} // Set the section ID when clicked
                                                     >
-                                                        {dept.department_name} {/* Display department name */}
+                                                        {dept.section_name} {/* Display section name */}
                                                     </DropdownMenuItem>
                                                 ))}
                                             </DropdownMenuContent>

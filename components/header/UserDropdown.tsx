@@ -27,11 +27,11 @@ export default function UserDropdown() {
             width={44}
             height={44}
             src={user?.image || "/profile.jpg"}
-            alt={user?.name || "User"}
+            alt={user?.first_name || "Profile picture"}
             className="rounded-full"
           />
           <span className="font-medium text-sm text-gray-700 dark:text-gray-400">
-            {user?.name || "User"}
+            {user?.first_name}
           </span>
           <ChevronDown className="h-4 w-4 stroke-gray-500 dark:stroke-gray-400" />
         </Button>
@@ -40,7 +40,7 @@ export default function UserDropdown() {
       <DropdownMenuContent className="w-56 p-2">
         <div className="mb-2 px-2">
           <p className="text-sm font-medium text-gray-700 dark:text-gray-400">
-            {user?.name || "Full Name"}
+            {user?.first_name}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {user?.email || "user@example.com"}

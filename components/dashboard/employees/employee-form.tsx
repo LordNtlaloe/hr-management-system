@@ -26,11 +26,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import { createEmployee } from "@/actions/employee.actions";
-import { getAllDepartments } from "@/actions/department.actions";
+import { getAllSections } from "@/actions/section.actions";
 import { getAllPositions } from "@/actions/position.actions";
 import { getAllEmployees } from "@/actions/employee.actions";
 import { EmployeeSchema, EmployeeDetailsSchema } from "@/schemas";
-import { Department, Position, Employee } from "@/types";
+import { Section, Position, Employee } from "@/types";
 
 type EmployeeFormValues = z.infer<typeof EmployeeSchema>;
 type EmployeeDetailsFormValues = z.infer<typeof EmployeeDetailsSchema>;
@@ -41,7 +41,7 @@ type MaritalStatus = "single" | "married" | "divorced" | "widowed";
 export default function EmployeeCreationForm() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,7 +56,7 @@ export default function EmployeeCreationForm() {
       gender: "male",
       email: "",
       phone: "",
-      department_id: "",
+      section_id: "",
       position_id: "",
       manager_id: "",
       hire_date: "", // keep as string in form
@@ -108,12 +108,12 @@ export default function EmployeeCreationForm() {
     const fetchData = async () => {
       try {
         const [deptResponse, posResponse, empResponse] = await Promise.all([
-          getAllDepartments(),
+          getAllSections(),
           getAllPositions(),
           getAllEmployees(),
         ]);
 
-        if (Array.isArray(deptResponse)) setDepartments(deptResponse);
+        if (Array.isArray(deptResponse)) setSections(deptResponse);
         if (Array.isArray(posResponse)) setPositions(posResponse);
         if (Array.isArray(empResponse)) setEmployees(empResponse);
       } catch (error) {
@@ -214,7 +214,7 @@ export default function EmployeeCreationForm() {
       {currentStep === 1 && (
         <EmployeeBasicForm
           employeeForm={employeeForm}
-          departments={departments}
+          sections={sections}
           positions={positions}
           employees={employees}
           handleNextStep={handleNextStep}
@@ -278,7 +278,7 @@ function Step({
 // -------------------- Employee Basic Form --------------------
 function EmployeeBasicForm({
   employeeForm,
-  departments,
+  sections,
   positions,
   employees,
   handleNextStep,
@@ -286,7 +286,7 @@ function EmployeeBasicForm({
   router,
 }: {
   employeeForm: ReturnType<typeof useForm<EmployeeFormValues>>;
-  departments: Department[];
+  sections: Section[];
   positions: Position[];
   employees: Employee[];
   handleNextStep: () => void;
@@ -407,25 +407,25 @@ function EmployeeBasicForm({
                 )}
               />
 
-              {/* Department */}
+              {/* Section */}
               <FormField
                 control={employeeForm.control}
-                name="department_id"
+                name="section_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Department</FormLabel>
+                    <FormLabel>Section</FormLabel>
                     <FormControl>
                       <Select
                         value={field.value}
                         onValueChange={field.onChange}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select Department" />
+                          <SelectValue placeholder="Select Section" />
                         </SelectTrigger>
                         <SelectContent>
-                          {departments.map((dept) => (
+                          {sections.map((dept) => (
                             <SelectItem key={dept._id} value={dept._id}>
-                              {dept.department_name}
+                              {dept.section_name}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -563,6 +563,7 @@ function EmployeeBasicForm({
                           <SelectItem value="active">Active</SelectItem>
                           <SelectItem value="inactive">Inactive</SelectItem>
                           <SelectItem value="terminated">Terminated</SelectItem>
+                          <SelectItem value="retired">Retired</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormControl>

@@ -204,7 +204,7 @@ export const getAllLeaveRequests = async (status?: string, departmentId?: string
             pipeline.unshift({ $match: { status: status } });
         }
 
-        // Add department filter if provided
+        // Add section filter if provided
         if (departmentId) {
             pipeline.push({
                 $match: {

@@ -170,7 +170,7 @@ const EmployeeOverview: React.FC = () => {
         if (Array.isArray(result)) {
           setEmployees(result);
 
-          // Process department data for charts
+          // Process section data for charts
           const deptCounts = result.reduce((acc: any, emp: Employee) => {
             const dept = emp.department_name || 'Unknown';
             acc[dept] = (acc[dept] || 0) + 1;
@@ -200,7 +200,7 @@ const EmployeeOverview: React.FC = () => {
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Employee Distribution by Department</CardTitle>
+          <CardTitle>Employee Distribution by Section</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -211,7 +211,7 @@ const EmployeeOverview: React.FC = () => {
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <Users className="h-12 w-12 text-gray-400 mb-4" />
               <p className="text-lg font-medium text-gray-600">No Employees Found</p>
-              <p className="text-sm text-gray-500">Add employees to see department distribution</p>
+              <p className="text-sm text-gray-500">Add employees to see section distribution</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
@@ -239,7 +239,7 @@ const EmployeeOverview: React.FC = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Employee Count by Department</CardTitle>
+          <CardTitle>Employee Count by Section</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -250,7 +250,7 @@ const EmployeeOverview: React.FC = () => {
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <BarChart3 className="h-12 w-12 text-gray-400 mb-4" />
               <p className="text-lg font-medium text-gray-600">No Data Available</p>
-              <p className="text-sm text-gray-500">Add employees to view department statistics</p>
+              <p className="text-sm text-gray-500">Add employees to view section statistics</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
@@ -564,7 +564,7 @@ const PositionAnalytics: React.FC = () => {
         if (Array.isArray(result)) {
           setPositions(result);
 
-          // Process position data by department
+          // Process position data by section
           const deptCounts = result.reduce((acc: any, pos: Position) => {
             const dept = pos.department_name || 'Unknown';
             acc[dept] = (acc[dept] || 0) + 1;
@@ -591,7 +591,7 @@ const PositionAnalytics: React.FC = () => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Positions by Department</CardTitle>
+        <CardTitle>Positions by Section</CardTitle>
         <CardDescription>Available job positions across departments</CardDescription>
       </CardHeader>
       <CardContent>
@@ -603,7 +603,7 @@ const PositionAnalytics: React.FC = () => {
           <div className="flex flex-col items-center justify-center h-64 text-center">
             <UserPlus className="h-12 w-12 text-gray-400 mb-4" />
             <p className="text-lg font-medium text-gray-600">No Positions Found</p>
-            <p className="text-sm text-gray-500">Create job positions to see department distribution</p>
+            <p className="text-sm text-gray-500">Create job positions to see section distribution</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={300}>
