@@ -25,12 +25,13 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { createEmployee } from "@/actions/employee.actions";
+import { createEmployee, linkEmployeeWithUser } from "@/actions/employee.actions";
 import { getAllSections } from "@/actions/section.actions";
 import { getAllPositions } from "@/actions/position.actions";
 import { getAllEmployees } from "@/actions/employee.actions";
 import { EmployeeSchema, EmployeeDetailsSchema } from "@/schemas";
 import { Section, Position, Employee } from "@/types";
+import { createUserForEmployee } from "@/actions/user.actions";
 
 type EmployeeFormValues = z.infer<typeof EmployeeSchema>;
 type EmployeeDetailsFormValues = z.infer<typeof EmployeeDetailsSchema>;
@@ -180,26 +181,50 @@ export default function EmployeeCreationForm() {
     const detailsData = detailsForm.getValues();
 
     try {
-      const result = await createEmployee(employeeData);
-      const employeeId = result.insertedId;
+      // Step 1: Create the employee first
+      const employeeResult = await createEmployee(employeeData);
+      const employeeId = employeeResult.insertedId;
 
-      if (result.success && employeeId) {
+      if (employeeResult.success && employeeId) {
+        // Step 2: Create user account for the employee
+        const userResult = await createUserForEmployee({
+          first_name: employeeData.first_name,
+          last_name: employeeData.last_name,
+          email: employeeData.email,
+          phone: employeeData.phone,
+          employee_id: employeeId,
+        });
+
+        if (!userResult.success) {
+          toast.error("Employee created but failed to create user account");
+          return;
+        }
+
+        // Step 3: Link employee with user account (optional)
+        if (userResult.userId) {
+          await linkEmployeeWithUser(employeeId, userResult.userId);
+        }
+
+        // Step 4: Create employee details
         const detailsResult = await createEmployeeDetails(
           employeeId,
           detailsData
         );
 
         if (detailsResult.success) {
-          toast.success("Employee created successfully");
+          toast.success(
+            "Employee, user account, and details created successfully"
+          );
           router.push("/employees");
         } else {
-          toast.error("Employee created but details failed");
+          toast.error("Employee and user created but details failed");
         }
       } else {
-        toast.error(result.error || "Failed to create employee");
+        toast.error(employeeResult.error || "Failed to create employee");
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
+      console.error("Employee creation error:", error);
     } finally {
       setLoading(false);
     }

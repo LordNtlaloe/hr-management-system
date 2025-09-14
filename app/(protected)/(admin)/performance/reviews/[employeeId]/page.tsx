@@ -1,9 +1,16 @@
 import { getPerformanceByEmployee } from "@/actions/performance.actions";
 
-type Props = { params: { id: string } };
+// Define Props type - params is now a Promise
+type Props = {
+  params: Promise<{
+    employeeId: string; // must match folder name [employeeId]
+  }>;
+};
 
 export default async function EmployeePerformancePage({ params }: Props) {
-  const performances = await getPerformanceByEmployee(params.id);
+  // Await the params Promise
+  const { employeeId } = await params;
+  const performances = await getPerformanceByEmployee(employeeId);
 
   return (
     <div className="p-6 max-w-2xl mx-auto">

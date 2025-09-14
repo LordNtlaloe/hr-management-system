@@ -84,7 +84,39 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>("all");
   const { role } = useCurrentRole();
   const user = useCurrentUser();
-  const isAdmin = role === "Admin" || role === "Employee";
+
+  // Only Admin role should have admin privileges
+  const isAdmin = role === "Admin";
+
+  // Helper function to safely get employee name
+  const getEmployeeName = (employee: Employee | undefined | null): string => {
+    if (!employee) return "Unknown Employee";
+    return employee.name || "Unknown Employee";
+  };
+
+  // Helper function to safely get employee email
+  const getEmployeeEmail = (employee: Employee | undefined | null): string => {
+    if (!employee) return "unknown@example.com";
+    return employee.email || "unknown@example.com";
+  };
+
+  // Helper function to safely get first letter for avatar
+  const getEmployeeInitial = (
+    employee: Employee | undefined | null
+  ): string => {
+    const name = getEmployeeName(employee);
+    return name.charAt(0).toUpperCase();
+  };
+
+  // Debug logging
+  useEffect(() => {
+    console.log("RequestedLeaves Debug:");
+    console.log("Role:", role);
+    console.log("User:", user);
+    console.log("Is Admin:", isAdmin);
+    console.log("Show Only Pending:", showOnlyPending);
+    console.log("Employee ID:", employeeId);
+  }, [role, user, isAdmin, showOnlyPending, employeeId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -92,19 +124,35 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
         setLoading(true);
         let data: LeaveRequest[] = [];
 
+        console.log("Fetching data...");
+
         if (showOnlyPending) {
+          console.log("Fetching pending leave requests...");
           const response = await getPendingLeaveRequests();
+          console.log("Pending requests response:", response);
           data = Array.isArray(response) ? response : [];
         } else {
+          console.log("Fetching all leave requests...");
           const response = await getAllLeaveRequests();
+          console.log("All requests response:", response);
           data = Array.isArray(response) ? response : [];
         }
 
-        // Filter by employee if specified
+        // Only filter by employee if specified AND if not admin OR if admin but specifically wants to see one employee
+        // For admin pages showing all requests, don't pass employeeId
         if (employeeId) {
-          data = data.filter((leave) => leave.employeeId._id === employeeId);
+          console.log("Filtering by employee ID:", employeeId);
+          data = data.filter((leave) => {
+            // Safe comparison handling both string and object employeeId formats
+            const leaveEmployeeId =
+              typeof leave.employeeId === "object"
+                ? leave.employeeId._id
+                : leave.employeeId;
+            return leaveEmployeeId === employeeId;
+          });
         }
 
+        console.log("Final data:", data);
         setAllLeaves(data);
         setFilteredLeaves(data);
       } catch (error) {
@@ -117,7 +165,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
     };
 
     fetchData();
-  }, [showOnlyPending, employeeId]);
+  }, [showOnlyPending, employeeId, isAdmin]);
 
   // Filter leaves based on search and filters
   useEffect(() => {
@@ -125,16 +173,17 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
 
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(
-        (leave) =>
-          leave.employeeId.name
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          leave.employeeId.email
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase()) ||
-          leave.reason?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      filtered = filtered.filter((leave) => {
+        const employeeName = getEmployeeName(leave.employeeId);
+        const employeeEmail = getEmployeeEmail(leave.employeeId);
+        const reason = leave.reason || "";
+
+        return (
+          employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          employeeEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          reason.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      });
     }
 
     // Status filter
@@ -153,11 +202,16 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
   }, [allLeaves, searchTerm, statusFilter, leaveTypeFilter]);
 
   const handleApprove = async (leaveId: string) => {
-    if (!isAdmin || !user?.id) return;
+    if (!isAdmin || !user?.id) {
+      console.log("Cannot approve - not admin or no user ID");
+      return;
+    }
 
     try {
       setProcessing(`approve-${leaveId}`);
+      console.log("Approving leave:", leaveId);
       const result = await approveLeaveRequest(leaveId, user.id);
+      console.log("Approve result:", result);
 
       if (result.success) {
         const updatedLeaves = allLeaves.map((leave) =>
@@ -186,11 +240,16 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
   };
 
   const handleReject = async (leaveId: string, reason?: string) => {
-    if (!isAdmin || !user?.id) return;
+    if (!isAdmin || !user?.id) {
+      console.log("Cannot reject - not admin or no user ID");
+      return;
+    }
 
     try {
       setProcessing(`reject-${leaveId}`);
+      console.log("Rejecting leave:", leaveId, "Reason:", reason);
       const result = await rejectLeaveRequest(leaveId, user.id, reason);
+      console.log("Reject result:", result);
 
       if (result.success) {
         const updatedLeaves = allLeaves.map((leave) =>
@@ -275,12 +334,14 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
       <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {showOnlyPending ? "Pending Leave Requests" : "Leave Requests"}
+            {showOnlyPending ? "Pending Leave Requests" : "All Leave Requests"}
           </h1>
           <p className="text-gray-500 dark:text-gray-400">
             {employeeId
-              ? "Your leave request history"
-              : "Manage employee leave requests"}
+              ? "Employee leave request history"
+              : isAdmin
+                ? "Manage all employee leave requests"
+                : "Your leave request history"}
           </p>
         </div>
         <div className="flex items-center space-x-2">
@@ -383,28 +444,28 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
                     {/* Employee Profile */}
                     <div className="flex items-start space-x-4">
                       <Avatar className="w-12 h-12">
-                        <AvatarImage src={leave.employeeId.avatar} />
+                        <AvatarImage src={leave.employeeId?.avatar} />
                         <AvatarFallback className="bg-gray-100">
-                          {leave.employeeId.name.charAt(0).toUpperCase()}
+                          {getEmployeeInitial(leave.employeeId)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
                         <h3 className="font-semibold text-lg text-gray-900 dark:text-white">
-                          {leave.employeeId.name}
+                          {getEmployeeName(leave.employeeId)}
                         </h3>
                         <div className="flex items-center space-x-2 text-sm text-gray-500">
                           <Mail className="w-4 h-4" />
-                          <span>{leave.employeeId.email}</span>
+                          <span>{getEmployeeEmail(leave.employeeId)}</span>
                         </div>
-                        {(leave.employeeId.position ||
-                          leave.employeeId.section) && (
+                        {(leave.employeeId?.position ||
+                          leave.employeeId?.section) && (
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {leave.employeeId.section && (
+                            {leave.employeeId?.section && (
                               <Badge variant="outline" className="text-xs">
                                 {leave.employeeId.section}
                               </Badge>
                             )}
-                            {leave.employeeId.position && (
+                            {leave.employeeId?.position && (
                               <span className="text-xs text-gray-500">
                                 {leave.employeeId.position}
                               </span>
@@ -459,6 +520,43 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
 
                   {/* Actions & Status Info */}
                   <div className="flex flex-col space-y-4 min-w-[250px]">
+                    {/* Action Buttons - Only show for admins with pending requests */}
+                    {isAdmin && leave.status === "pending" && (
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleApprove(leave._id)}
+                          disabled={!!processing}
+                          className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          {processing === `approve-${leave._id}` ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4 mr-1" />
+                              Approve
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleReject(leave._id)}
+                          disabled={!!processing}
+                          className="flex-1"
+                        >
+                          {processing === `reject-${leave._id}` ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <>
+                              <X className="w-4 h-4 mr-1" />
+                              Reject
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+
                     {/* Approval/Rejection Info */}
                     {(leave.approvedBy || leave.rejectedBy) && (
                       <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
@@ -475,13 +573,15 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
                               }
                             />
                             <AvatarFallback className="text-xs">
-                              {(
+                              {getEmployeeInitial(
                                 leave.approvedBy || leave.rejectedBy
-                              )?.name.charAt(0)}
+                              )}
                             </AvatarFallback>
                           </Avatar>
                           <span className="text-sm">
-                            {(leave.approvedBy || leave.rejectedBy)?.name}
+                            {getEmployeeName(
+                              leave.approvedBy || leave.rejectedBy
+                            )}
                           </span>
                         </div>
                         <div className="flex items-center space-x-1 mt-1 text-xs text-gray-500">
@@ -520,43 +620,6 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
                             </p>
                           </div>
                         )}
-                      </div>
-                    )}
-
-                    {/* Action Buttons */}
-                    {isAdmin && leave.status === "pending" && (
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleApprove(leave._id)}
-                          disabled={!!processing}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                        >
-                          {processing === `approve-${leave._id}` ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <Check className="w-4 h-4 mr-1" />
-                              Approve
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleReject(leave._id)}
-                          disabled={!!processing}
-                          className="flex-1"
-                        >
-                          {processing === `reject-${leave._id}` ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <X className="w-4 h-4 mr-1" />
-                              Reject
-                            </>
-                          )}
-                        </Button>
                       </div>
                     )}
                   </div>

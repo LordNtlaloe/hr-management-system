@@ -44,9 +44,20 @@ export const getLeaveRequestById = async (id: string) => {
         const leave = await collection.aggregate([
             { $match: { _id: new ObjectId(id) } },
             {
+                $addFields: {
+                    employeeObjectId: { 
+                        $cond: {
+                            if: { $type: "$employeeId" },
+                            then: { $toObjectId: "$employeeId" },
+                            else: "$employeeId"
+                        }
+                    }
+                }
+            },
+            {
                 $lookup: {
                     from: "employees",
-                    localField: "employeeId",
+                    localField: "employeeObjectId",
                     foreignField: "_id",
                     as: "employee"
                 }
@@ -58,6 +69,17 @@ export const getLeaveRequestById = async (id: string) => {
                     localField: "approvedBy",
                     foreignField: "_id",
                     as: "approver"
+                }
+            },
+            {
+                $addFields: {
+                    employeeId: "$employee"
+                }
+            },
+            {
+                $project: {
+                    employee: 0,
+                    employeeObjectId: 0
                 }
             }
         ]).toArray();
@@ -105,7 +127,11 @@ export const approveLeaveRequest = async (id: string, approverId: string, commen
             // Update leave balance
             const leaveRequest = await collection.findOne({ _id: new ObjectId(id) });
             if (leaveRequest) {
-                await updateLeaveBalance(leaveRequest.employeeId, leaveRequest.leaveType, leaveRequest.days);
+                // Handle both string and ObjectId employeeId formats
+                const employeeId = typeof leaveRequest.employeeId === 'string' 
+                    ? new ObjectId(leaveRequest.employeeId)
+                    : leaveRequest.employeeId;
+                await updateLeaveBalance(employeeId, leaveRequest.leaveType, leaveRequest.days);
             }
         }
 
@@ -143,7 +169,14 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("leave_requests");
-        let filter: any = { employeeId: new ObjectId(employeeId) };
+        let filter: any = {};
+        
+        // Handle both string and ObjectId formats
+        try {
+            filter.employeeId = new ObjectId(employeeId);
+        } catch {
+            filter.employeeId = employeeId;
+        }
 
         if (status) {
             filter.status = status;
@@ -152,92 +185,242 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
         return await collection.find(filter).sort({ appliedDate: -1 }).toArray();
     } catch (error: any) {
         console.error("Error fetching employee leave requests:", error.message);
-        return { error: error.message };
+        return [];
     }
 }
 
-// FIXED: This was the main issue - incorrect lookup configuration
+// FIXED: Main issue was here - incorrect lookup configuration for string employeeIds
 export const getPendingLeaveRequests = async (managerId?: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("leave_requests");
-        let pipeline: any[] = [
-            { $match: { status: "pending" } },
-            {
-                $lookup: {
-                    from: "employees", // Fixed: should lookup from employees collection
-                    localField: "employeeId", // Fixed: should match employeeId field
-                    foreignField: "_id", // Fixed: should match employee's _id
-                    as: "employeeId" // This will replace the ObjectId with employee data
-                }
-            },
-            { $unwind: "$employeeId" }, // Unwind the employee data
-            { $sort: { appliedDate: 1 } }
-        ];
+        
+        // Try the aggregation approach first
+        try {
+            let pipeline: any[] = [
+                { $match: { status: "pending" } },
+                {
+                    $addFields: {
+                        employeeObjectId: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                                then: { $toObjectId: "$employeeId" },
+                                else: "$employeeId"
+                            }
+                        }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "employeeObjectId",
+                        foreignField: "_id",
+                        as: "employeeData"
+                    }
+                },
+                { $unwind: "$employeeData" },
+                {
+                    $addFields: {
+                        employeeId: "$employeeData"
+                    }
+                },
+                {
+                    $project: {
+                        employeeData: 0,
+                        employeeObjectId: 0
+                    }
+                },
+                { $sort: { appliedDate: 1 } }
+            ];
 
-        return await collection.aggregate(pipeline).toArray();
+            const result = await collection.aggregate(pipeline).toArray();
+            console.log("Aggregation result:", result);
+            
+            if (result.length > 0) {
+                return result;
+            }
+        } catch (aggregationError) {
+            console.log("Aggregation failed, trying fallback approach:", aggregationError);
+        }
+
+        // Fallback to manual approach
+        const leaveCollection = await database?.collection("leave_requests");
+        const employeeCollection = await database?.collection("employees");
+        
+        // Get pending leave requests
+        const pendingLeaves = await leaveCollection.find({ status: "pending" }).sort({ appliedDate: 1 }).toArray();
+        console.log("Pending leaves from DB:", pendingLeaves);
+        
+        if (pendingLeaves.length === 0) {
+            return [];
+        }
+        
+        // Get all employees
+        const employees = await employeeCollection.find({}).toArray();
+        console.log("Employees from DB:", employees.length);
+        
+        // Create employee lookup map
+        const employeeMap = new Map();
+        employees.forEach((emp: { _id: { toString: () => any; }; }) => {
+            employeeMap.set(emp._id.toString(), emp);
+        });
+        
+        // Populate employee data
+        const populatedLeaves = pendingLeaves.map((leave: { employeeId: any; }) => {
+            const employeeData = employeeMap.get(leave.employeeId);
+            console.log("Looking for employee:", leave.employeeId, "Found:", !!employeeData);
+            
+            return {
+                ...leave,
+                employeeId: employeeData || {
+                    _id: leave.employeeId,
+                    name: "Unknown Employee",
+                    email: "unknown@example.com"
+                }
+            };
+        });
+        
+        console.log("Final populated leaves:", populatedLeaves);
+        return populatedLeaves;
+        
     } catch (error: any) {
         console.error("Error fetching pending leave requests:", error.message);
-        return { error: error.message };
+        return [];
     }
 }
 
-// Get all leave requests (for admin view)
+// Get all leave requests (for admin view) - FIXED
 export const getAllLeaveRequests = async (status?: string, departmentId?: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("leave_requests");
-        let pipeline: any[] = [
-            {
-                $lookup: {
-                    from: "employees",
-                    localField: "employeeId",
-                    foreignField: "_id",
-                    as: "employeeId"
+        
+        // Try aggregation approach first
+        try {
+            let pipeline: any[] = [];
+            
+            // Add status filter if provided
+            if (status) {
+                pipeline.push({ $match: { status: status } });
+            }
+            
+            pipeline.push(
+                {
+                    $addFields: {
+                        employeeObjectId: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                                then: { $toObjectId: "$employeeId" },
+                                else: "$employeeId"
+                            }
+                        }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "employeeObjectId",
+                        foreignField: "_id",
+                        as: "employeeData"
+                    }
+                },
+                { $unwind: "$employeeData" },
+                {
+                    $addFields: {
+                        employeeId: "$employeeData"
+                    }
                 }
-            },
-            { $unwind: "$employeeId" }
-        ];
+            );
 
-        // Add status filter if provided
+            // Add section filter if provided
+            if (departmentId) {
+                pipeline.push({
+                    $match: {
+                        "employeeId.departmentId": new ObjectId(departmentId)
+                    }
+                });
+            }
+
+            // Add approver information for approved/rejected requests
+            pipeline.push(
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "approvedBy",
+                        foreignField: "_id",
+                        as: "approver"
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "rejectedBy",
+                        foreignField: "_id",
+                        as: "rejector"
+                    }
+                },
+                {
+                    $project: {
+                        employeeData: 0,
+                        employeeObjectId: 0
+                    }
+                },
+                { $sort: { appliedDate: -1 } }
+            );
+
+            const result = await collection.aggregate(pipeline).toArray();
+            console.log("All leaves aggregation result:", result);
+            
+            if (result.length > 0) {
+                return result;
+            }
+        } catch (aggregationError) {
+            console.log("Aggregation failed, trying fallback approach:", aggregationError);
+        }
+
+        // Fallback to manual approach
+        const leaveCollection = await database?.collection("leave_requests");
+        const employeeCollection = await database?.collection("employees");
+        
+        // Build query
+        let query: any = {};
         if (status) {
-            pipeline.unshift({ $match: { status: status } });
+            query.status = status;
         }
-
-        // Add section filter if provided
-        if (departmentId) {
-            pipeline.push({
-                $match: {
-                    "employeeId.departmentId": new ObjectId(departmentId)
-                }
-            });
+        
+        // Get leave requests
+        const leaves = await leaveCollection.find(query).sort({ appliedDate: -1 }).toArray();
+        console.log("All leaves from DB:", leaves);
+        
+        if (leaves.length === 0) {
+            return [];
         }
-
-        // Add approver information for approved/rejected requests
-        pipeline.push(
-            {
-                $lookup: {
-                    from: "employees",
-                    localField: "approvedBy",
-                    foreignField: "_id",
-                    as: "approver"
-                }
-            },
-            {
-                $lookup: {
-                    from: "employees",
-                    localField: "rejectedBy",
-                    foreignField: "_id",
-                    as: "rejector"
-                }
-            },
-            { $sort: { appliedDate: -1 } }
-        );
-
-        return await collection.aggregate(pipeline).toArray();
+        
+        // Get all employees
+        const employees = await employeeCollection.find({}).toArray();
+        
+        // Create employee lookup map
+        const employeeMap = new Map();
+        employees.forEach((emp: { _id: { toString: () => any; }; }) => {
+            employeeMap.set(emp._id.toString(), emp);
+        });
+        
+        // Populate employee data
+        const populatedLeaves = leaves.map((leave: { employeeId: any; }) => ({
+            ...leave,
+            employeeId: employeeMap.get(leave.employeeId) || {
+                _id: leave.employeeId,
+                name: "Unknown Employee",
+                email: "unknown@example.com"
+            }
+        }));
+        
+        console.log("Final populated all leaves:", populatedLeaves);
+        return populatedLeaves;
+        
     } catch (error: any) {
         console.error("Error fetching all leave requests:", error.message);
-        return { error: error.message };
+        return [];
     }
 }
 
@@ -264,10 +447,19 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("leave_balances");
-        return await collection.find({ employeeId: new ObjectId(employeeId) }).toArray();
+        let query: any = {};
+        
+        // Handle both string and ObjectId formats
+        try {
+            query.employeeId = new ObjectId(employeeId);
+        } catch {
+            query.employeeId = employeeId;
+        }
+        
+        return await collection.find(query).toArray();
     } catch (error: any) {
         console.error("Error fetching employee leave balance:", error.message);
-        return { error: error.message };
+        return [];
     }
 }
 
@@ -336,9 +528,20 @@ export const getLeaveReport = async (startDate: Date, endDate: Date, departmentI
         const pipeline = [
             { $match: matchCondition },
             {
+                $addFields: {
+                    employeeObjectId: {
+                        $cond: {
+                            if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                            then: { $toObjectId: "$employeeId" },
+                            else: "$employeeId"
+                        }
+                    }
+                }
+            },
+            {
                 $lookup: {
                     from: "employees",
-                    localField: "employeeId",
+                    localField: "employeeObjectId",
                     foreignField: "_id",
                     as: "employee"
                 }
@@ -358,7 +561,7 @@ export const getLeaveReport = async (startDate: Date, endDate: Date, departmentI
             {
                 $group: {
                     _id: {
-                        employeeId: "$employeeId",
+                        employeeId: "$employeeObjectId",
                         leaveType: "$leaveType"
                     },
                     employee: { $first: "$employee" },

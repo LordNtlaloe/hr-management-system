@@ -3,6 +3,8 @@ import { connectToDB } from "@/lib/db";
 import { ObjectId } from "mongodb";
 let dbConnection: any;
 let database: any;
+import bcrypt from "bcryptjs";
+
 
 // Initialize database connection
 const init = async () => {
@@ -225,3 +227,69 @@ export const getUserRoleById = async (id: string) => {
     }
 
 }
+
+
+// Add this function to your user.actions.ts file
+
+
+// CREATE - Create user account for new employee
+// Add this updated function to your user.actions.ts file
+
+export const createUserForEmployee = async (userData: {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string; // Changed from phone_number to match employee schema
+  employee_id: string;
+}) => {
+  if (!dbConnection) await init();
+  
+  try {
+    const collection = await database?.collection("users");
+
+    if (!database || !collection) {
+      console.log("Failed to connect to collection...");
+      return { error: "Failed to connect to users collection", success: false };
+    }
+
+    // Check if user already exists
+    const existingUser = await collection.findOne({ email: userData.email });
+    if (existingUser) {
+      return { error: "User with this email already exists", success: false };
+    }
+
+    // Hash the default password "user123"
+    const hashedPassword = await bcrypt.hash("user123", 10);
+
+    // Create user object
+    const newUser = {
+      first_name: userData.first_name,
+      last_name: userData.last_name,
+      name: `${userData.first_name} ${userData.last_name}`, // Add name field for NextAuth compatibility
+      email: userData.email,
+      phone_number: userData.phone, // Store as phone_number in users collection
+      password: hashedPassword,
+      role: "Employee", // Default role
+      emailVerified: new Date(), // Mark as verified immediately
+      employee_id: userData.employee_id, // Link to employee record
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await collection.insertOne(newUser);
+    
+    if (result.acknowledged) {
+      console.log(`User created successfully for employee: ${userData.email}`);
+      return { 
+        success: true, 
+        userId: result.insertedId.toString(),
+        message: "User account created successfully"
+      };
+    }
+
+    return { error: "Failed to create user", success: false };
+  } catch (error: any) {
+    console.error("Error creating user for employee:", error.message);
+    return { error: error.message, success: false };
+  }
+};

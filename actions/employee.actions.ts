@@ -28,7 +28,8 @@ export const createEmployee = async (employeeData: z.infer<typeof EmployeeSchema
             ...employeeData,
             createdAt: new Date(),
             updatedAt: new Date(),
-            isActive: true
+            isActive: true,
+            user_id: null // This will be updated after user creation
         };
         const result = await collection.insertOne(employee);
         return { insertedId: result.insertedId.toString(), success: true };
@@ -37,7 +38,6 @@ export const createEmployee = async (employeeData: z.infer<typeof EmployeeSchema
         return { error: error.message };
     }
 }
-
 export const getEmployeeById = async (id: string) => {
     if (!dbConnection) await init();
     try {
@@ -188,3 +188,28 @@ export const getEmployeesByDepartment = async (departmentId: string) => {
     }
 }
 
+
+// Update your createEmployee function in employee.actions.ts to optionally store user_id
+
+
+
+// Add this function to link employee with user account
+export const linkEmployeeWithUser = async (employeeId: string, userId: string) => {
+    if (!dbConnection) await init();
+    try {
+        const collection = await database?.collection("employees");
+        const result = await collection.updateOne(
+            { _id: new ObjectId(employeeId) },
+            { 
+                $set: { 
+                    user_id: userId,
+                    updatedAt: new Date() 
+                } 
+            }
+        );
+        return { modifiedCount: result.modifiedCount, success: true };
+    } catch (error: any) {
+        console.error("Error linking employee with user:", error.message);
+        return { error: error.message };
+    }
+}
