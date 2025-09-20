@@ -1,36 +1,42 @@
-// components/leaves/MyRequests.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { LeaveRequest } from "@/types";
-import LeaveList from "@/components/leaves/LeavesList";
-import { getEmployeeLeaveRequests } from "@/actions/leaves.actions";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { LeaveRequest } from "@/types";
 
 const MyRequests: React.FC = () => {
+  const user = useCurrentUser();
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const user = useCurrentUser();
 
   useEffect(() => {
-    const fetchMyRequests = async () => {
-      if (!user?.id) {
+    const fetchMyLeaves = async () => {
+      setLoading(true);
+
+      // Use type assertion to access employee_id
+      const employeeId = (user as any)?.employee_id;
+      if (!employeeId) {
+        setLeaves([]);
         setLoading(false);
         return;
       }
 
       try {
-        const employeeLeaves = await getEmployeeLeaveRequests(user.id);
-        setLeaves(employeeLeaves);
-      } catch (error) {
-        console.error("Error fetching my leave requests:", error);
+        const allLeaves: LeaveRequest[] = await fetch(
+          `/api/leaves?employeeId=${employeeId}`
+        ).then((res) => res.json());
+
+        setLeaves(allLeaves);
+      } catch (err) {
+        console.error("Failed to fetch leaves", err);
+        setLeaves([]);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMyRequests();
-  }, [user?.id]);
+    fetchMyLeaves();
+  }, [user]);
 
   if (loading) {
     return (
@@ -40,38 +46,55 @@ const MyRequests: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <p className="text-gray-500">Please log in to view your requests.</p>
-      </div>
-    );
+  if (leaves.length === 0) {
+    return <p className="text-gray-500">No leave requests found.</p>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">My Leave Requests</h2>
-        <span className="text-sm text-gray-500">
-          Total: {leaves.length} request{leaves.length !== 1 ? "s" : ""}
-        </span>
+      <h2 className="text-xl font-semibold">My Leave Requests</h2>
+      <div className="space-y-3">
+        {leaves.map((leave) => (
+          <div
+            key={leave._id}
+            className="p-4 border rounded-md shadow-sm bg-white dark:bg-gray-800"
+          >
+            <p>
+              <strong>Type:</strong> {leave.leaveType}
+            </p>
+            <p>
+              <strong>Start:</strong>{" "}
+              {new Date(leave.startDate).toLocaleDateString()}
+            </p>
+            <p>
+              <strong>End:</strong>{" "}
+              {new Date(leave.endDate).toLocaleDateString()}
+            </p>
+            <p>
+              <strong>Days:</strong> {leave.days}
+            </p>
+            <p>
+              <strong>Status:</strong>{" "}
+              <span
+                className={`${
+                  leave.status === "pending"
+                    ? "text-yellow-500"
+                    : leave.status === "approved"
+                      ? "text-green-500"
+                      : "text-red-500"
+                } font-semibold`}
+              >
+                {leave.status}
+              </span>
+            </p>
+            {leave.reason && (
+              <p>
+                <strong>Reason:</strong> {leave.reason}
+              </p>
+            )}
+          </div>
+        ))}
       </div>
-
-      {leaves.length === 0 ? (
-        <div className="text-center py-8 border rounded-lg bg-gray-50 dark:bg-gray-800">
-          <p className="text-gray-500">
-            You haven't submitted any leave requests yet.
-          </p>
-        </div>
-      ) : (
-        <LeaveList
-          leaves={leaves}
-          isAdmin={false}
-          processing={null}
-          onApprove={() => {}} // Not needed for employee view
-          onReject={() => {}} // Not needed for employee view
-        />
-      )}
     </div>
   );
 };

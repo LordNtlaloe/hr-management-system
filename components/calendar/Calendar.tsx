@@ -10,10 +10,14 @@ import {
   DateSelectArg,
   EventClickArg,
   EventContentArg,
+  DateSpanApi,
 } from "@fullcalendar/core";
 import { useModal } from "@/hooks/use-modal";
 import { Modal } from "@/components/ui/modal";
-import { getEmployeeLeaveRequests, createLeaveRequest } from '@/actions/leaves.actions';
+import {
+  getEmployeeLeaveRequests,
+  createLeaveRequest,
+} from "@/actions/leaves.actions";
 import { useCurrentRole } from "@/hooks/use-current-role";
 
 export enum LeaveType {
@@ -45,7 +49,6 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
     const fetchLeaveEvents = async () => {
       try {
         const response = await getEmployeeLeaveRequests(employeeId);
-
         if (Array.isArray(response)) {
           const formattedEvents: LeaveEvent[] = response.map((leave: any) => ({
             id: leave._id,
@@ -56,23 +59,20 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
             extendedProps: {
               status: leave.status,
               leaveType: leave.leaveType,
-              leaveId: leave._id
+              leaveId: leave._id,
             },
           }));
-
           setEvents(formattedEvents);
         }
       } catch (error) {
         console.error("Failed to fetch leave events", error);
       }
     };
-
     fetchLeaveEvents();
   }, [employeeId]);
 
   const handleDateSelect = (selectInfo: DateSelectArg) => {
     if (!isEmployee) return;
-
     resetModalFields();
     setStartDate(selectInfo.startStr);
     setEndDate(selectInfo.endStr || selectInfo.startStr);
@@ -111,11 +111,10 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
           extendedProps: {
             status: "pending",
             leaveType,
-            leaveId: result.insertedId
+            leaveId: result.insertedId,
           },
         };
-
-        setEvents((prevEvents) => [...prevEvents, newEvent]);
+        setEvents((prev) => [...prev, newEvent]);
         closeModal();
         resetModalFields();
       }
@@ -137,6 +136,31 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
     setSelectedLeave(null);
   };
 
+  /** ✅ Prevent past dates & overlapping leaves */
+  const isSelectable = (span: DateSpanApi) => {
+    const today = new Date(new Date().toDateString());
+    const start = new Date(span.start);
+    const end = new Date(span.end);
+
+    // 1. Block past dates
+    if (start < today) return false;
+
+    // 2. Block if range overlaps existing leaves
+    for (let event of events) {
+      const eventStart = new Date(event.start as string);
+      const eventEnd = new Date(event.end as string);
+
+      if (
+        (start >= eventStart && start < eventEnd) ||
+        (end > eventStart && end <= eventEnd) ||
+        (start <= eventStart && end >= eventEnd)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
       <div className="custom-calendar">
@@ -154,12 +178,17 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
           select={handleDateSelect}
           eventClick={handleEventClick}
           eventContent={renderEventContent}
-          customButtons={isEmployee ? {
-            requestLeaveButton: {
-              text: "Request Leave +",
-              click: openModal,
-            },
-          } : undefined}
+          selectAllow={isSelectable}
+          customButtons={
+            isEmployee
+              ? {
+                  requestLeaveButton: {
+                    text: "Request Leave +",
+                    click: openModal,
+                  },
+                }
+              : undefined
+          }
         />
       </div>
 
@@ -174,7 +203,9 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
               {selectedLeave ? "Leave Details" : "Request Leave"}
             </h5>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              {selectedLeave ? "View your leave request details" : "Submit a new leave request"}
+              {selectedLeave
+                ? "View your leave request details"
+                : "Submit a new leave request"}
             </p>
           </div>
           <div className="mt-8">
@@ -184,12 +215,14 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
               </label>
               <select
                 value={leaveType}
-                onChange={(e) => setLeaveType(e.target.value as unknown as LeaveType)}
+                onChange={(e) =>
+                  setLeaveType(e.target.value as unknown as LeaveType)
+                }
                 className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                 disabled={!!selectedLeave || !isEmployee}
               >
                 {Object.values(LeaveType).map((type) => (
-                  <option key={type as string} value={type as string}>
+                  <option key={type} value={type}>
                     {type.charAt(0) + type.slice(1).toLowerCase()}
                   </option>
                 ))}
@@ -237,12 +270,15 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
                 <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-400">
                   Status
                 </label>
-                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${selectedLeave.extendedProps.status === 'approved'
-                    ? 'bg-green-100 text-green-800'
-                    : selectedLeave.extendedProps.status === 'rejected'
-                      ? 'bg-red-100 text-red-800'
-                      : 'bg-yellow-100 text-yellow-800'
-                  }`}>
+                <div
+                  className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                    selectedLeave.extendedProps.status === "approved"
+                      ? "bg-green-100 text-green-800"
+                      : selectedLeave.extendedProps.status === "rejected"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-yellow-100 text-yellow-800"
+                  }`}
+                >
                   {selectedLeave.extendedProps.status.charAt(0).toUpperCase() +
                     selectedLeave.extendedProps.status.slice(1)}
                 </div>
@@ -274,14 +310,20 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
 
 const renderEventContent = (eventInfo: EventContentArg) => {
   const status = eventInfo.event.extendedProps.status;
-  const colorClass = status === 'approved' ? 'success' :
-    status === 'rejected' ? 'danger' : 'warning';
+  const colorClass =
+    status === "approved"
+      ? "success"
+      : status === "rejected"
+        ? "danger"
+        : "warning";
 
   return (
-    <div className={`event-fc-color flex fc-event-main ${colorClass} p-1 rounded-sm`}>
+    <div
+      className={`event-fc-color flex fc-event-main ${colorClass} p-1 rounded-sm`}
+    >
       <div className="fc-daygrid-event-dot"></div>
       <div className="fc-event-title">{eventInfo.event.title}</div>
-      {eventInfo.event.extendedProps.status === 'pending' && (
+      {eventInfo.event.extendedProps.status === "pending" && (
         <div className="fc-event-status">(Pending)</div>
       )}
     </div>
