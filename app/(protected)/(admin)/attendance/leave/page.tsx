@@ -1,12 +1,20 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useCurrentRole } from "@/hooks/use-current-role";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import Calendar from "@/components/calendar/Calendar";
 import RequestedLeaves from "@/components/attendence/requested-leaves";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CalendarDays, ClipboardList, Users, BarChart3 } from "lucide-react";
+import LeaveList from "@/components/leaves/LeavesList";
+import {
+  getAllLeaveRequests,
+  getEmployeeLeaveRequests,
+} from "@/actions/leaves.actions"; // 🔑 you’ll implement these
+import { LeaveRequest } from "@/types";
+import PendingLeaves from "@/components/leaves/PendingLeaves";
+import MyRequests from "@/components/leaves/MyRequests";
 
 const LeavesPage: React.FC = () => {
   const { role } = useCurrentRole();
@@ -20,7 +28,7 @@ const LeavesPage: React.FC = () => {
     );
   }
 
-  // Employee view - show calendar with request functionality
+  // Employee view
   if (role === "Employee") {
     return (
       <div className="container mx-auto p-6 space-y-6">
@@ -48,19 +56,18 @@ const LeavesPage: React.FC = () => {
           </TabsList>
 
           <TabsContent value="calendar" className="mt-6">
-            {/* Non-null assertion ensures employeeId is string */}
             <Calendar employeeId={user.id!} />
           </TabsContent>
 
           <TabsContent value="requests" className="mt-6">
-            <EmployeeLeaveRequests employeeId={user.id!} />
+            <MyRequests />
           </TabsContent>
         </Tabs>
       </div>
     );
   }
 
-  // Admin/Manager view - show pending requests and management tools
+  // Admin/Manager view
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -95,11 +102,11 @@ const LeavesPage: React.FC = () => {
         </TabsList>
 
         <TabsContent value="pending" className="mt-6">
-          <RequestedLeaves />
+          <PendingLeaves />
         </TabsContent>
 
         <TabsContent value="all-requests" className="mt-6">
-          <AllLeaveRequests />
+          <RequestedLeaves />
         </TabsContent>
 
         <TabsContent value="calendar" className="mt-6">
@@ -114,52 +121,68 @@ const LeavesPage: React.FC = () => {
   );
 };
 
-// Component to show employee's own leave requests
+// Employee’s own requests
 const EmployeeLeaveRequests: React.FC<{ employeeId: string }> = ({
   employeeId,
 }) => {
-  if (!employeeId) return null;
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+
+  useEffect(() => {
+    getEmployeeLeaveRequests(employeeId).then(setLeaves);
+  }, [employeeId]);
 
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">My Leave Requests</h2>
-      <p className="text-gray-500">
-        Your leave request history will appear here.
-      </p>
+      <LeaveList
+        leaves={leaves}
+        isAdmin={false}
+        processing={null}
+        onApprove={() => {}}
+        onReject={() => {}}
+      />
     </div>
   );
 };
 
-// Component to show all leave requests for admin
+// Admin view - all requests
 const AllLeaveRequests: React.FC = () => {
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+
+  useEffect(() => {
+    getAllLeaveRequests().then(setLeaves);
+  }, []);
+
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">All Leave Requests</h2>
-      <p className="text-gray-500">
-        All employee leave requests will appear here.
-      </p>
+      <LeaveList
+        leaves={leaves}
+        isAdmin={true}
+        processing={null}
+        onApprove={(id) => console.log("Approve", id)}
+        onReject={(id) => console.log("Reject", id)}
+      />
     </div>
   );
 };
 
-// Component to show team calendar view
+// Team calendar view
 const TeamCalendar: React.FC = () => {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Team Calendar</h2>
-      <p className="text-gray-500">Team leave calendar will appear here.</p>
+      <Calendar employeeId="" /> {/* show all employees */}
     </div>
   );
 };
 
-// Component to show leave reports
+// Reports tab
 const LeaveReports: React.FC = () => {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Leave Reports</h2>
-      <p className="text-gray-500">
-        Leave analytics and reports will appear here.
-      </p>
+      <p className="text-gray-500">Charts and analytics coming soon 🚀</p>
     </div>
   );
 };
