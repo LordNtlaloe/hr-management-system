@@ -15,7 +15,7 @@ import { notFound } from "next/navigation";
 // Types
 // --------------------
 interface EmployeeProfilePageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 interface EmployeeDetails {
@@ -64,7 +64,8 @@ interface AdditionalInfo {
 export default async function EmployeeProfilePage({
   params,
 }: EmployeeProfilePageProps) {
-  const { id } = params;
+  // Await the params promise
+  const { id } = await params;
 
   const [employeeResult, detailsResult] = await Promise.all([
     getEmployeeById(id),
