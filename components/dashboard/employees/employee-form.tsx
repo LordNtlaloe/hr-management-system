@@ -25,7 +25,11 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { createEmployee, linkEmployeeWithUser } from "@/actions/employee.actions";
+import { 
+  createEmployee, 
+  linkEmployeeWithUser,
+  createEmployeeDetails 
+} from "@/actions/employee.actions";
 import { getAllSections } from "@/actions/section.actions";
 import { getAllPositions } from "@/actions/position.actions";
 import { getAllEmployees } from "@/actions/employee.actions";
@@ -60,11 +64,11 @@ export default function EmployeeCreationForm() {
       section_id: "",
       position_id: "",
       manager_id: "",
-      hire_date: "", // keep as string in form
-      date_of_birth: "", // keep as string in form
+      hire_date: "",
+      date_of_birth: "",
       salary: 0,
       status: "active",
-      qualifications: "", // make sure schema has this
+      qualifications: "",
       physical_address: "",
       nationality: "",
     },
@@ -127,58 +131,21 @@ export default function EmployeeCreationForm() {
 
   // -------------------- Step Handlers --------------------
   const handleNextStep = async () => {
-    // First, let's check the current form values
-    const currentValues = employeeForm.getValues();
-    console.log("Current form values:", currentValues);
-
-    // Check form state before validation
-    console.log("Form state before validation:", {
-      isValid: employeeForm.formState.isValid,
-      errors: employeeForm.formState.errors,
-      touchedFields: employeeForm.formState.touchedFields,
-      dirtyFields: employeeForm.formState.dirtyFields,
-    });
-
-    // Try validating all fields first
     const isValid = await employeeForm.trigger();
-
-    // Check form state after validation
-    console.log("Form state after validation:", {
-      isValid: employeeForm.formState.isValid,
-      errors: employeeForm.formState.errors,
-      isValidating: employeeForm.formState.isValidating,
-    });
-
-    console.log("Trigger result:", isValid);
-
     if (isValid) {
       setCurrentStep(2);
-    } else {
-      // Force a re-render to show any errors
-      employeeForm.formState.errors &&
-        Object.keys(employeeForm.formState.errors).forEach((key) => {
-          console.log(
-            `Error for ${key}:`,
-            employeeForm.formState.errors[
-              key as keyof typeof employeeForm.formState.errors
-            ]
-          );
-        });
     }
   };
 
   const handlePreviousStep = () => setCurrentStep(1);
 
-  // Temporary function to test step change without validation
-  const handleNextStepWithoutValidation = () => {
-    console.log("Skipping validation, moving to step 2");
-    setCurrentStep(2);
-  };
-
   const handleFinalSubmit = async () => {
     setLoading(true);
     const employeeData = employeeForm.getValues();
     const detailsData = detailsForm.getValues();
+
+    console.log("Employee Data:", employeeData);
+    console.log("Details Data:", detailsData);
 
     try {
       // Step 1: Create the employee first
@@ -200,16 +167,16 @@ export default function EmployeeCreationForm() {
           return;
         }
 
-        // Step 3: Link employee with user account (optional)
+        // Step 3: Link employee with user account
         if (userResult.userId) {
           await linkEmployeeWithUser(employeeId, userResult.userId);
         }
 
-        // Step 4: Create employee details
-        const detailsResult = await createEmployeeDetails(
-          employeeId,
-          detailsData
-        );
+        // Step 4: Create employee details using the server action
+        const detailsResult = await createEmployeeDetails({
+          employee_id: employeeId,
+          ...detailsData
+        });
 
         if (detailsResult.success) {
           toast.success(
@@ -217,7 +184,7 @@ export default function EmployeeCreationForm() {
           );
           router.push("/employees");
         } else {
-          toast.error("Employee and user created but details failed");
+          toast.error("Employee and user created but details failed: " + detailsResult.error);
         }
       } else {
         toast.error(employeeResult.error || "Failed to create employee");
@@ -243,7 +210,6 @@ export default function EmployeeCreationForm() {
           positions={positions}
           employees={employees}
           handleNextStep={handleNextStep}
-          handleNextStepWithoutValidation={handleNextStepWithoutValidation}
           router={router}
         />
       )}
@@ -307,7 +273,6 @@ function EmployeeBasicForm({
   positions,
   employees,
   handleNextStep,
-  handleNextStepWithoutValidation,
   router,
 }: {
   employeeForm: ReturnType<typeof useForm<EmployeeFormValues>>;
@@ -315,7 +280,6 @@ function EmployeeBasicForm({
   positions: Position[];
   employees: Employee[];
   handleNextStep: () => void;
-  handleNextStepWithoutValidation: () => void;
   router: ReturnType<typeof useRouter>;
 }) {
   return (
@@ -657,13 +621,6 @@ function EmployeeBasicForm({
               >
                 Cancel
               </Button>
-              <Button
-                type="button"
-                onClick={handleNextStepWithoutValidation}
-                variant="secondary"
-              >
-                Next (Skip Validation)
-              </Button>
               <Button type="button" onClick={handleNextStep}>
                 Next: Additional Details
               </Button>
@@ -890,112 +847,94 @@ function EmployeeDetailsForm({
                           value={field.value}
                           onValueChange={field.onChange}
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select Account Type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="checking">Checking</SelectItem>
-                            <SelectItem value="savings">Savings</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Account Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="checking">Checking</SelectItem>
+                          <SelectItem value="savings">Savings</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
+          </div>
 
-            {/* Additional Information */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-medium">Additional Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  control={detailsForm.control}
-                  name="additional_info.marital_status"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Marital Status</FormLabel>
-                      <FormControl>
-                        <Select
-                          value={field.value}
-                          onValueChange={field.onChange}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select Marital Status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="single">Single</SelectItem>
-                            <SelectItem value="married">Married</SelectItem>
-                            <SelectItem value="divorced">Divorced</SelectItem>
-                            <SelectItem value="widowed">Widowed</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={detailsForm.control}
-                  name="additional_info.children_count"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Number of Children</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="number"
-                          min="0"
-                          onChange={(e) =>
-                            field.onChange(Number(e.target.value))
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+          {/* Additional Information */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium">Additional Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField
+                control={detailsForm.control}
+                name="additional_info.marital_status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Marital Status</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Marital Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="single">Single</SelectItem>
+                          <SelectItem value="married">Married</SelectItem>
+                          <SelectItem value="divorced">Divorced</SelectItem>
+                          <SelectItem value="widowed">Widowed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={detailsForm.control}
+                name="additional_info.children_count"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Number of Children</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        min="0"
+                        onChange={(e) =>
+                          field.onChange(Number(e.target.value))
+                        }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
+          </div>
 
-            <div className="flex justify-end gap-4 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePreviousStep}
-              >
-                Back to Basic Info
-              </Button>
-              <Button
-                type="button"
-                onClick={handleFinalSubmit}
-                disabled={loading}
-              >
-                {loading ? "Creating..." : "Create Employee"}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+          <div className="flex justify-end gap-4 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePreviousStep}
+            >
+              Back to Basic Info
+            </Button>
+            <Button
+              type="button"
+              onClick={handleFinalSubmit}
+              disabled={loading}
+            >
+              {loading ? "Creating..." : "Create Employee"}
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </CardContent>
+  </Card>
   );
-}
-
-// -------------------- API Call --------------------
-async function createEmployeeDetails(
-  employeeId: string,
-  detailsData: Partial<EmployeeDetailsFormValues>
-) {
-  try {
-    const response = await fetch("/api/employee-details", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employee_id: employeeId, ...detailsData }),
-    });
-    return await response.json();
-  } catch (error) {
-    console.error("Error creating employee details:", error);
-    return { success: false, error: "Failed to create employee details" };
-  }
 }

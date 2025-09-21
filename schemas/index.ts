@@ -133,72 +133,59 @@ export const TerminationSchema = z.object({
 });
 
 
-// ==========================
-// Basic Employee Schema
-// ==========================
 export const EmployeeSchema = z.object({
     first_name: z.string().min(1, "First name is required"),
     last_name: z.string().min(1, "Last name is required"),
+    employment_number: z.string().min(1, "Employment number is required"),
+    gender: z.enum(["male", "female"]),
     email: z.string().email("Invalid email address"),
-    phone: z.string().min(10, "Phone number must be at least 10 digits"),
+    phone: z.string().min(1, "Phone number is required"),
     section_id: z.string().min(1, "Section is required"),
     position_id: z.string().min(1, "Position is required"),
-    manager_id: z.string().min(1, "Manager is required"),
-    hire_date: z.string().min(1, "Hire date is required"), // Keep as string for form input
-    salary: z.number().min(0, "Salary must be positive"),
-    status: z.enum(["active", "on-leave", "terminated"]),
-    date_of_birth: z.string().min(1, "Date of birth is required"), // Keep as string for form input
-    gender: z.enum(["male", "female"]),
-    nationality: z.string().min(1, "Nationality is required"),
-    employment_number: z.string().min(1, "Employment number is required"),
-    qualifications: z.string().min(1, "Qualifications are required"),
+    manager_id: z.string().optional(),
+    hire_date: z.string().min(1, "Hire date is required"),
+    date_of_birth: z.string().min(1, "Date of birth is required"),
+    salary: z.number().min(0, "Salary must be a positive number"),
+    status: z.enum(["active", "inactive", "terminated", "retired"]),
+    qualifications: z.string().optional(),
     physical_address: z.string().min(1, "Physical address is required"),
+    nationality: z.string().min(1, "Nationality is required"),
 });
 
-// ==========================
-// Employee Details Schema
-// ==========================
-// schemas/index.ts
 export const EmployeeDetailsSchema = z.object({
     employee_id: z.string(),
     address: z.object({
-        country: z.string(),
-        city_state: z.string(),
-        postal_code: z.string(),
-        street_address: z.string(),
+        country: z.string().optional(),
+        city_state: z.string().optional(),
+        postal_code: z.string().optional(),
+        street_address: z.string().optional(),
         tax_id: z.string().optional(),
-    }),
+    }).optional(),
     emergency_contact: z.object({
-        name: z.string(),
-        relationship: z.string(),
-        phone: z.string(),
-        email: z.string().optional(),
+        name: z.string().optional(),
+        relationship: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().email().optional(),
         address: z.string().optional(),
-    }),
+    }).optional(),
     banking_info: z.object({
-        bank_name: z.string(),
-        account_number: z.string(),
+        bank_name: z.string().optional(),
+        account_number: z.string().optional(),
         routing_number: z.string().optional(),
-        account_type: z.enum(["checking", "savings"]),
-    }),
+        account_type: z.enum(["checking", "savings"]).optional(),
+    }).optional(),
     additional_info: z.object({
-        marital_status: z.enum(["single", "married", "divorced", "widowed"]),
+        marital_status: z.enum(["single", "married", "divorced", "widowed"]).optional(),
         spouse_name: z.string().optional(),
-        children_count: z.number(),
+        children_count: z.number().optional(),
         next_of_kin: z.string().optional(),
         medical_conditions: z.string().optional(),
         allergies: z.string().optional(),
         notes: z.string().optional(),
-    }),
+    }).optional(),
 });
 
-// 👇 Notice `.deepPartial()` instead of just `.partial()`
-
-// Partial schema for updates
-export const UpdateEmployeeDetailsSchema = EmployeeDetailsSchema.partial().extend({
-    employee_id: z.string().min(1, "Employee ID is required"),
-});
-
+export const UpdateEmployeeDetailsSchema = EmployeeDetailsSchema.omit({ employee_id: true });
 // Individual section schemas
 export const AddressSchema = EmployeeDetailsSchema.shape.address;
 export const EmergencyContactSchema = EmployeeDetailsSchema.shape.emergency_contact;
