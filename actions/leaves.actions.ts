@@ -1,4 +1,3 @@
-// actions/leaves.actions.ts
 "use server"
 
 import { connectToDB } from "@/lib/db"
@@ -46,18 +45,49 @@ const serializeDocument = (doc: any): any => {
     return doc
 }
 
+// Helper function to normalize ObjectId
+const normalizeObjectId = (id: string | ObjectId): ObjectId => {
+    if (id instanceof ObjectId) {
+        return id
+    }
+
+    if (typeof id === 'string' && ObjectId.isValid(id)) {
+        return new ObjectId(id)
+    }
+
+    throw new Error(`Invalid ObjectId: ${id}`)
+}
+
 export const createLeaveRequest = async (leaveData: any) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
+
+        // Debug log to see what's being passed
+        console.log("Received leaveData:", leaveData)
+        console.log("Employee ID type:", typeof leaveData.employeeId, "Value:", leaveData.employeeId)
+
+        // Handle employeeId conversion properly
+        let employeeIdObj;
+        try {
+            employeeIdObj = normalizeObjectId(leaveData.employeeId)
+        } catch (error) {
+            console.error("Error converting employeeId to ObjectId:", error)
+            // If conversion fails, try to use it as is (might already be ObjectId)
+            employeeIdObj = leaveData.employeeId
+        }
+
         const leave = {
             ...leaveData,
-            employeeId: new ObjectId(leaveData.employeeId),
+            employeeId: employeeIdObj,
             status: "pending",
             appliedDate: new Date(),
             createdAt: new Date(),
             updatedAt: new Date(),
         }
+
+        console.log("Final leave object to insert:", leave)
+
         const result = await collection.insertOne(leave)
         return { insertedId: result.insertedId, success: true }
     } catch (error: any) {
@@ -201,15 +231,20 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
         const collection = await database?.collection("leave_requests")
         const filter: any = {}
 
+        console.log("Getting leave requests for employeeId:", employeeId)
+
         try {
-            filter.employeeId = new ObjectId(employeeId)
-        } catch {
+            filter.employeeId = normalizeObjectId(employeeId)
+        } catch (error) {
+            console.error("Error normalizing employeeId, using as is:", error)
             filter.employeeId = employeeId
         }
 
         if (status) {
             filter.status = status
         }
+
+        console.log("Filter for leave requests:", filter)
 
         const leaves = await collection.aggregate([
             { $match: filter },
@@ -246,6 +281,8 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
             { $sort: { appliedDate: -1 } },
         ]).toArray()
 
+        console.log("Found leave requests:", leaves)
+
         return serializeDocument(leaves)
     } catch (error: any) {
         console.error("Error fetching employee leave requests:", error.message)
@@ -253,8 +290,6 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
     }
 }
 
-
-// ✅ Get all leave requests with employee info
 // ✅ Get all leave requests with employee details
 export const getAllLeaveRequests = async () => {
     if (!dbConnection) await init()
@@ -316,7 +351,6 @@ export const getAllLeaveRequests = async () => {
     }
 }
 
-
 // ✅ Get only pending leave requests with employee info
 export const getPendingLeaveRequests = async () => {
     if (!dbConnection) await init()
@@ -371,7 +405,7 @@ export const createLeaveBalance = async (balanceData: any) => {
         const collection = await database?.collection("leave_balances")
         const balance = {
             ...balanceData,
-            employeeId: new ObjectId(balanceData.employeeId),
+            employeeId: normalizeObjectId(balanceData.employeeId),
             createdAt: new Date(),
             updatedAt: new Date(),
         }
@@ -390,8 +424,9 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
         const query: any = {}
 
         try {
-            query.employeeId = new ObjectId(employeeId)
-        } catch {
+            query.employeeId = normalizeObjectId(employeeId)
+        } catch (error) {
+            console.error("Error normalizing employeeId for balance query:", error)
             query.employeeId = employeeId
         }
 

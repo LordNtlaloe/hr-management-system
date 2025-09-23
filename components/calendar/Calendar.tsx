@@ -19,6 +19,7 @@ import {
   createLeaveRequest,
 } from "@/actions/leaves.actions";
 import { useCurrentRole } from "@/hooks/use-current-role";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export enum LeaveType {
   ANNUAL = "Annual",
@@ -43,12 +44,23 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
   const calendarRef = useRef<FullCalendar>(null);
   const { isOpen, openModal, closeModal } = useModal();
   const { role } = useCurrentRole();
+  const user = useCurrentUser();
   const isEmployee = role === "Employee";
+
+  // Debug logs
+  useEffect(() => {
+    console.log("Calendar component received employeeId:", employeeId);
+    console.log("EmployeeId type:", typeof employeeId);
+    console.log("Current user:", user);
+  }, [employeeId, user]);
 
   useEffect(() => {
     const fetchLeaveEvents = async () => {
       try {
+        console.log("Fetching leave events for employeeId:", employeeId);
         const response = await getEmployeeLeaveRequests(employeeId);
+        console.log("Leave requests response:", response);
+        
         if (Array.isArray(response)) {
           const formattedEvents: LeaveEvent[] = response.map((leave: any) => ({
             id: leave._id,
@@ -63,12 +75,16 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
             },
           }));
           setEvents(formattedEvents);
+          console.log("Formatted events:", formattedEvents);
         }
       } catch (error) {
         console.error("Failed to fetch leave events", error);
       }
     };
-    fetchLeaveEvents();
+    
+    if (employeeId) {
+      fetchLeaveEvents();
+    }
   }, [employeeId]);
 
   const handleDateSelect = (selectInfo: DateSelectArg) => {
@@ -90,8 +106,10 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
 
   const handleSubmitLeaveRequest = async () => {
     try {
+      console.log("Submitting leave request with employeeId:", employeeId);
+      
       const leaveData = {
-        employeeId,
+        employeeId: employeeId, // Ensure this is the correct ID
         leaveType,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
@@ -99,7 +117,10 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
         days: calculateDaysDifference(new Date(startDate), new Date(endDate)),
       };
 
+      console.log("Sending leave data:", leaveData);
+      
       const result = await createLeaveRequest(leaveData);
+      console.log("Create leave request result:", result);
 
       if (result.success) {
         const newEvent: LeaveEvent = {
@@ -117,6 +138,8 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
         setEvents((prev) => [...prev, newEvent]);
         closeModal();
         resetModalFields();
+      } else {
+        console.error("Failed to create leave request:", result.error);
       }
     } catch (error) {
       console.error("Failed to submit leave request", error);
@@ -136,7 +159,6 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
     setSelectedLeave(null);
   };
 
-  /** ✅ Prevent past dates & overlapping leaves */
   const isSelectable = (span: DateSpanApi) => {
     const today = new Date(new Date().toDateString());
     const start = new Date(span.start);
