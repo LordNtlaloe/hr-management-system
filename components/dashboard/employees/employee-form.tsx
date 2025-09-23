@@ -25,10 +25,10 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { 
-  createEmployee, 
+import {
+  createEmployee,
   linkEmployeeWithUser,
-  createEmployeeDetails 
+  createEmployeeDetails,
 } from "@/actions/employee.actions";
 import { getAllSections } from "@/actions/section.actions";
 import { getAllPositions } from "@/actions/position.actions";
@@ -175,7 +175,7 @@ export default function EmployeeCreationForm() {
         // Step 4: Create employee details using the server action
         const detailsResult = await createEmployeeDetails({
           employee_id: employeeId,
-          ...detailsData
+          ...detailsData,
         });
 
         if (detailsResult.success) {
@@ -184,7 +184,10 @@ export default function EmployeeCreationForm() {
           );
           router.push("/employees");
         } else {
-          toast.error("Employee and user created but details failed: " + detailsResult.error);
+          toast.error(
+            "Employee and user created but details failed: " +
+              detailsResult.error
+          );
         }
       } else {
         toast.error(employeeResult.error || "Failed to create employee");
@@ -425,7 +428,7 @@ function EmployeeBasicForm({
                 )}
               />
 
-              {/* Position */}
+              {/* Position - Changed from Select to Input */}
               <FormField
                 control={employeeForm.control}
                 name="position_id"
@@ -433,21 +436,7 @@ function EmployeeBasicForm({
                   <FormItem>
                     <FormLabel>Position</FormLabel>
                     <FormControl>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Position" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {positions.map((pos) => (
-                            <SelectItem key={pos._id} value={pos._id}>
-                              {pos.position_title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Input {...field} placeholder="e.g., Software Engineer" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -847,94 +836,94 @@ function EmployeeDetailsForm({
                           value={field.value}
                           onValueChange={field.onChange}
                         >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Account Type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="checking">Checking</SelectItem>
-                          <SelectItem value="savings">Savings</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Account Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="checking">Checking</SelectItem>
+                            <SelectItem value="savings">Savings</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Additional Information */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium">Additional Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={detailsForm.control}
-                name="additional_info.marital_status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Marital Status</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Marital Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="single">Single</SelectItem>
-                          <SelectItem value="married">Married</SelectItem>
-                          <SelectItem value="divorced">Divorced</SelectItem>
-                          <SelectItem value="widowed">Widowed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={detailsForm.control}
-                name="additional_info.children_count"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Number of Children</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="number"
-                        min="0"
-                        onChange={(e) =>
-                          field.onChange(Number(e.target.value))
-                        }
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            {/* Additional Information */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium">Additional Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={detailsForm.control}
+                  name="additional_info.marital_status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Marital Status</FormLabel>
+                      <FormControl>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Marital Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="single">Single</SelectItem>
+                            <SelectItem value="married">Married</SelectItem>
+                            <SelectItem value="divorced">Divorced</SelectItem>
+                            <SelectItem value="widowed">Widowed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={detailsForm.control}
+                  name="additional_info.children_count"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Number of Children</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          min="0"
+                          onChange={(e) =>
+                            field.onChange(Number(e.target.value))
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
-          </div>
 
-          <div className="flex justify-end gap-4 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePreviousStep}
-            >
-              Back to Basic Info
-            </Button>
-            <Button
-              type="button"
-              onClick={handleFinalSubmit}
-              disabled={loading}
-            >
-              {loading ? "Creating..." : "Create Employee"}
-            </Button>
-          </div>
-        </form>
-      </Form>
-    </CardContent>
-  </Card>
+            <div className="flex justify-end gap-4 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreviousStep}
+              >
+                Back to Basic Info
+              </Button>
+              <Button
+                type="button"
+                onClick={handleFinalSubmit}
+                disabled={loading}
+              >
+                {loading ? "Creating..." : "Create Employee"}
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
   );
 }
