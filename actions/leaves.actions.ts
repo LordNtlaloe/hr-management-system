@@ -7,6 +7,7 @@ import { ObjectId } from "mongodb"
 let dbConnection: any
 let database: any
 
+// 🔹 Init DB
 const init = async () => {
     try {
         const connection = await connectToDB()
@@ -18,6 +19,7 @@ const init = async () => {
     }
 }
 
+// 🔹 Serialize any MongoDB document into client-safe data
 const serializeDocument = (doc: any): any => {
     if (!doc) return doc
 
@@ -31,7 +33,12 @@ const serializeDocument = (doc: any): any => {
         for (const [key, value] of Object.entries(doc)) {
             if (value instanceof Date) {
                 serialized[key] = value.toISOString()
-            } else if (value && typeof value === "object" && value.constructor && value.constructor.name === "ObjectId") {
+            } else if (
+                value &&
+                typeof value === "object" &&
+                value.constructor &&
+                value.constructor.name === "ObjectId"
+            ) {
                 serialized[key] = value.toString()
             } else if (typeof value === "object") {
                 serialized[key] = serializeDocument(value)
@@ -46,35 +53,28 @@ const serializeDocument = (doc: any): any => {
     return doc
 }
 
-// Helper function to normalize ObjectId
+// 🔹 Normalize ObjectId helper
 const normalizeObjectId = (id: string | ObjectId): ObjectId => {
-    if (id instanceof ObjectId) {
-        return id
-    }
-
-    if (typeof id === 'string' && ObjectId.isValid(id)) {
+    if (id instanceof ObjectId) return id
+    if (typeof id === "string" && ObjectId.isValid(id)) {
         return new ObjectId(id)
     }
-
     throw new Error(`Invalid ObjectId: ${id}`)
 }
 
+// ===================== CRUD =====================
+
+// 🔹 Create Leave Request
 export const createLeaveRequest = async (leaveData: any) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
 
-        // Debug log to see what's being passed
-        console.log("Received leaveData:", leaveData)
-        console.log("Employee ID type:", typeof leaveData.employeeId, "Value:", leaveData.employeeId)
-
-        // Handle employeeId conversion properly
-        let employeeIdObj;
+        let employeeIdObj
         try {
             employeeIdObj = normalizeObjectId(leaveData.employeeId)
         } catch (error) {
             console.error("Error converting employeeId to ObjectId:", error)
-            // If conversion fails, try to use it as is (might already be ObjectId)
             employeeIdObj = leaveData.employeeId
         }
 
@@ -87,16 +87,15 @@ export const createLeaveRequest = async (leaveData: any) => {
             updatedAt: new Date(),
         }
 
-        console.log("Final leave object to insert:", leave)
-
         const result = await collection.insertOne(leave)
-        return { insertedId: result.insertedId, success: true }
+        return { insertedId: result.insertedId.toString(), success: true }
     } catch (error: any) {
         console.error("Error creating leave request:", error.message)
         return { error: error.message }
     }
 }
 
+// 🔹 Get Leave Request by ID
 export const getLeaveRequestById = async (id: string) => {
     if (!dbConnection) await init()
     try {
@@ -108,7 +107,7 @@ export const getLeaveRequestById = async (id: string) => {
                     $addFields: {
                         employeeObjectId: {
                             $cond: {
-                                if: { $type: "$employeeId" },
+                                if: { $eq: [{ $type: "$employeeId" }, "string"] },
                                 then: { $toObjectId: "$employeeId" },
                                 else: "$employeeId",
                             },
@@ -146,20 +145,21 @@ export const getLeaveRequestById = async (id: string) => {
             ])
             .toArray()
 
-        return leave[0] || null
+        return serializeDocument(leave[0] || null)
     } catch (error: any) {
         console.error("Error fetching leave request:", error.message)
         return { error: error.message }
     }
 }
 
+// 🔹 Update Leave Request
 export const updateLeaveRequest = async (id: string, updateData: any) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
         const result = await collection.updateOne(
             { _id: new ObjectId(id) },
-            { $set: { ...updateData, updatedAt: new Date() } },
+            { $set: { ...updateData, updatedAt: new Date() } }
         )
         return { modifiedCount: result.modifiedCount, success: true }
     } catch (error: any) {
@@ -168,7 +168,12 @@ export const updateLeaveRequest = async (id: string, updateData: any) => {
     }
 }
 
-export const approveLeaveRequest = async (id: string, approverId: string, comments?: string) => {
+// 🔹 Approve Leave Request
+export const approveLeaveRequest = async (
+    id: string,
+    approverId: string,
+    comments?: string
+) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
@@ -182,17 +187,21 @@ export const approveLeaveRequest = async (id: string, approverId: string, commen
                     approverComments: comments || "",
                     updatedAt: new Date(),
                 },
-            },
+            }
         )
 
         if (result.modifiedCount > 0) {
-            const leaveRequest = await collection.findOne({
-                _id: new ObjectId(id),
-            })
+            const leaveRequest = await collection.findOne({ _id: new ObjectId(id) })
             if (leaveRequest) {
                 const employeeId =
-                    typeof leaveRequest.employeeId === "string" ? new ObjectId(leaveRequest.employeeId) : leaveRequest.employeeId
-                await updateLeaveBalance(employeeId, leaveRequest.leaveType, leaveRequest.days)
+                    typeof leaveRequest.employeeId === "string"
+                        ? new ObjectId(leaveRequest.employeeId)
+                        : leaveRequest.employeeId
+                await updateLeaveBalance(
+                    employeeId,
+                    leaveRequest.leaveType,
+                    leaveRequest.days
+                )
             }
         }
 
@@ -203,7 +212,12 @@ export const approveLeaveRequest = async (id: string, approverId: string, commen
     }
 }
 
-export const rejectLeaveRequest = async (id: string, rejectedBy: string, reason?: string) => {
+// 🔹 Reject Leave Request
+export const rejectLeaveRequest = async (
+    id: string,
+    rejectedBy: string,
+    reason?: string
+) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
@@ -217,7 +231,7 @@ export const rejectLeaveRequest = async (id: string, rejectedBy: string, reason?
                     rejectionReason: reason || "",
                     updatedAt: new Date(),
                 },
-            },
+            }
         )
         return { modifiedCount: result.modifiedCount, success: true }
     } catch (error: any) {
@@ -226,63 +240,61 @@ export const rejectLeaveRequest = async (id: string, rejectedBy: string, reason?
     }
 }
 
-export const getEmployeeLeaveRequests = async (employeeId: string, status?: string) => {
+// 🔹 Get Employee Leave Requests
+export const getEmployeeLeaveRequests = async (
+    employeeId: string,
+    status?: string
+) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
         const filter: any = {}
 
-        console.log("Getting leave requests for employeeId:", employeeId)
-
         try {
             filter.employeeId = normalizeObjectId(employeeId)
         } catch (error) {
-            console.error("Error normalizing employeeId, using as is:", error)
+            console.error("Error normalizing employeeId:", error)
             filter.employeeId = employeeId
         }
 
-        if (status) {
-            filter.status = status
-        }
+        if (status) filter.status = status
 
-        console.log("Filter for leave requests:", filter)
-
-        const leaves = await collection.aggregate([
-            { $match: filter },
-            {
-                $addFields: {
-                    employeeObjectId: {
-                        $cond: {
-                            if: { $eq: [{ $type: "$employeeId" }, "string"] },
-                            then: { $toObjectId: "$employeeId" },
-                            else: "$employeeId",
+        const leaves = await collection
+            .aggregate([
+                { $match: filter },
+                {
+                    $addFields: {
+                        employeeObjectId: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                                then: { $toObjectId: "$employeeId" },
+                                else: "$employeeId",
+                            },
                         },
                     },
                 },
-            },
-            {
-                $lookup: {
-                    from: "employees",
-                    localField: "employeeObjectId",
-                    foreignField: "_id",
-                    as: "employeeData",
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "employeeObjectId",
+                        foreignField: "_id",
+                        as: "employeeData",
+                    },
                 },
-            },
-            {
-                $addFields: {
-                    employeeId: { $arrayElemAt: ["$employeeData", 0] },
+                {
+                    $addFields: {
+                        employeeId: { $arrayElemAt: ["$employeeData", 0] },
+                    },
                 },
-            },
-            {
-                $project: {
-                    employeeData: 0,
-                    employeeObjectId: 0,
+                {
+                    $project: {
+                        employeeData: 0,
+                        employeeObjectId: 0,
+                    },
                 },
-            },
-            { $sort: { appliedDate: -1 } },
-        ]).toArray()
-
-        console.log("Found leave requests:", leaves)
+                { $sort: { appliedDate: -1 } },
+            ])
+            .toArray()
 
         return serializeDocument(leaves)
     } catch (error: any) {
@@ -291,7 +303,7 @@ export const getEmployeeLeaveRequests = async (employeeId: string, status?: stri
     }
 }
 
-// ✅ Get all leave requests with employee details
+// 🔹 Get All Leave Requests (Admin)
 export const getAllLeaveRequests = async () => {
     if (!dbConnection) await init()
     try {
@@ -333,13 +345,11 @@ export const getAllLeaveRequests = async () => {
                 { $unwind: "$employee" },
                 {
                     $addFields: {
-                        employeeId: "$employee", // overwrite employeeId with full employee object
+                        employeeId: "$employee",
                     },
                 },
                 {
-                    $project: {
-                        employee: 0, // remove temp field
-                    },
+                    $project: { employee: 0 },
                 },
                 { $sort: { appliedDate: -1 } },
             ])
@@ -352,46 +362,48 @@ export const getAllLeaveRequests = async () => {
     }
 }
 
-// ✅ Get only pending leave requests with employee info
+// 🔹 Get Pending Leave Requests
 export const getPendingLeaveRequests = async () => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
 
-        const leaves = await collection.aggregate([
-            { $match: { status: "pending" } },
-            {
-                $addFields: {
-                    employeeObjectId: {
-                        $cond: {
-                            if: { $eq: [{ $type: "$employeeId" }, "string"] },
-                            then: { $toObjectId: "$employeeId" },
-                            else: "$employeeId",
+        const leaves = await collection
+            .aggregate([
+                { $match: { status: "pending" } },
+                {
+                    $addFields: {
+                        employeeObjectId: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                                then: { $toObjectId: "$employeeId" },
+                                else: "$employeeId",
+                            },
                         },
                     },
                 },
-            },
-            {
-                $lookup: {
-                    from: "employees",
-                    localField: "employeeObjectId",
-                    foreignField: "_id",
-                    as: "employeeData",
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "employeeObjectId",
+                        foreignField: "_id",
+                        as: "employeeData",
+                    },
                 },
-            },
-            {
-                $addFields: {
-                    employeeId: { $arrayElemAt: ["$employeeData", 0] },
+                {
+                    $addFields: {
+                        employeeId: { $arrayElemAt: ["$employeeData", 0] },
+                    },
                 },
-            },
-            {
-                $project: {
-                    employeeData: 0,
-                    employeeObjectId: 0,
+                {
+                    $project: {
+                        employeeData: 0,
+                        employeeObjectId: 0,
+                    },
                 },
-            },
-            { $sort: { appliedDate: -1 } },
-        ]).toArray()
+                { $sort: { appliedDate: -1 } },
+            ])
+            .toArray()
 
         return serializeDocument(leaves)
     } catch (error: any) {
@@ -399,6 +411,8 @@ export const getPendingLeaveRequests = async () => {
         return []
     }
 }
+
+// ===================== BALANCES =====================
 
 export const createLeaveBalance = async (balanceData: any) => {
     if (!dbConnection) await init()
@@ -411,7 +425,7 @@ export const createLeaveBalance = async (balanceData: any) => {
             updatedAt: new Date(),
         }
         const result = await collection.insertOne(balance)
-        return { insertedId: result.insertedId, success: true }
+        return { insertedId: result.insertedId.toString(), success: true }
     } catch (error: any) {
         console.error("Error creating leave balance:", error.message)
         return { error: error.message }
@@ -422,7 +436,7 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_balances")
-        const query: any = {}
+        let query: any = {}
 
         try {
             query.employeeId = normalizeObjectId(employeeId)
@@ -431,26 +445,29 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
             query.employeeId = employeeId
         }
 
-        return await collection.find(query).toArray()
+        const balances = await collection.find(query).toArray()
+        return serializeDocument(balances)
     } catch (error: any) {
         console.error("Error fetching employee leave balance:", error.message)
         return []
     }
 }
 
-const updateLeaveBalance = async (employeeId: ObjectId, leaveType: string, daysUsed: number, session?: any) => {
+const updateLeaveBalance = async (
+    employeeId: ObjectId,
+    leaveType: string,
+    daysUsed: number,
+    session?: any
+) => {
     try {
         const collection = await database?.collection("leave_balances")
         const result = await collection.updateOne(
-            {
-                employeeId: employeeId,
-                leaveType: leaveType,
-            },
+            { employeeId, leaveType },
             {
                 $inc: { used: daysUsed },
                 $set: { updatedAt: new Date() },
             },
-            { session },
+            { session }
         )
 
         if (result.modifiedCount === 0) {
@@ -469,13 +486,13 @@ export const resetLeaveBalances = async (year: number) => {
     try {
         const collection = await database?.collection("leave_balances")
         const result = await collection.updateMany(
-            { year: year },
+            { year },
             {
                 $set: {
                     used: 0,
                     updatedAt: new Date(),
                 },
-            },
+            }
         )
         return { modifiedCount: result.modifiedCount, success: true }
     } catch (error: any) {
@@ -484,7 +501,14 @@ export const resetLeaveBalances = async (year: number) => {
     }
 }
 
-export const getLeaveReport = async (startDate: Date, endDate: Date, departmentId?: string) => {
+// ===================== REPORTS =====================
+
+// 🔹 Leave Report
+export const getLeaveReport = async (
+    startDate: Date,
+    endDate: Date,
+    departmentId?: string
+) => {
     if (!dbConnection) await init()
     try {
         const collection = await database?.collection("leave_requests")
@@ -495,7 +519,7 @@ export const getLeaveReport = async (startDate: Date, endDate: Date, departmentI
             status: "approved",
         }
 
-        const pipeline = [
+        const pipeline: any[] = [
             { $match: matchCondition },
             {
                 $addFields: {
@@ -521,9 +545,7 @@ export const getLeaveReport = async (startDate: Date, endDate: Date, departmentI
 
         if (departmentId) {
             pipeline.push({
-                $match: {
-                    "employee.departmentId": new ObjectId(departmentId),
-                },
+                $match: { "employee.departmentId": new ObjectId(departmentId) },
             } as any)
         }
 
@@ -539,13 +561,14 @@ export const getLeaveReport = async (startDate: Date, endDate: Date, departmentI
             },
         } as any)
 
-        return await collection.aggregate(pipeline).toArray()
+        return serializeDocument(await collection.aggregate(pipeline).toArray())
     } catch (error: any) {
         console.error("Error generating leave report:", error.message)
         return { error: error.message }
     }
 }
 
+// 🔹 Employee Status Counts
 export const getEmployeeStatusCounts = async () => {
     if (!dbConnection) await init()
     try {
@@ -553,7 +576,6 @@ export const getEmployeeStatusCounts = async () => {
         const leaveRequestsCollection = await database?.collection("leave_requests")
 
         const employees = await employeesCollection.find({}).toArray()
-
         const activeLeaves = await leaveRequestsCollection
             .find({
                 status: "approved",
@@ -581,6 +603,7 @@ export const getEmployeeStatusCounts = async () => {
     }
 }
 
+// 🔹 Monthly Leave Requests
 export const getMonthlyLeaveRequests = async (year: number) => {
     if (!dbConnection) await init()
     try {
@@ -608,16 +631,13 @@ export const getMonthlyLeaveRequests = async (year: number) => {
                     _id: 0,
                 },
             },
-            {
-                $sort: { month: 1 },
-            },
+            { $sort: { month: 1 } },
         ]
 
         const result = await collection.aggregate(pipeline).toArray()
-
         const monthlyData = Array(12).fill(0)
 
-        result.forEach((item: { month: number; count: any }) => {
+        result.forEach((item: { month: number; count: number }) => {
             monthlyData[item.month - 1] = item.count
         })
 
@@ -628,83 +648,159 @@ export const getMonthlyLeaveRequests = async (year: number) => {
     }
 }
 
-export const getEmployeeLeaveUtilization = async (timeframe: "month" | "quarter" | "year") => {
+// 🔹 Employee Leave Utilization
+// 🔹 Employee Leave Utilization
+export const getEmployeeLeaveUtilization = async (employeeId: string, year?: number) => {
     if (!dbConnection) await init()
     try {
-        const collection = await database?.collection("leave_balances")
-        const leaveRequestsCollection = await database?.collection("leave_requests")
+        const currentYear = year || new Date().getFullYear()
+        const collection = await database?.collection("leave_requests")
 
-        const now = new Date()
-        let startDate: Date
-
-        if (timeframe === "month") {
-            startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-        } else if (timeframe === "quarter") {
-            const quarter = Math.floor(now.getMonth() / 3)
-            startDate = new Date(now.getFullYear(), quarter * 3, 1)
-        } else {
-            startDate = new Date(now.getFullYear(), 0, 1)
+        let queryEmployeeId
+        try {
+            queryEmployeeId = normalizeObjectId(employeeId)
+        } catch (error) {
+            console.error("Error normalizing employeeId:", error)
+            queryEmployeeId = employeeId
         }
 
-        const balances = await collection.find({}).toArray()
-        const totalAllocated = balances.reduce((sum: any, balance: { allocated: any }) => sum + balance.allocated, 0)
-
-        const usedLeaves = await leaveRequestsCollection
-            .aggregate([
-                {
-                    $match: {
-                        status: "approved",
-                        startDate: { $gte: startDate, $lte: now },
+        const pipeline = [
+            {
+                $match: {
+                    employeeId: queryEmployeeId,
+                    status: "approved",
+                    startDate: {
+                        $gte: new Date(currentYear, 0, 1),
+                        $lt: new Date(currentYear + 1, 0, 1)
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: "$leaveType",
+                    totalDays: { $sum: "$days" },
+                    requestCount: { $sum: 1 },
+                    averageDays: { $avg: "$days" }
+                }
+            },
+            {
+                $project: {
+                    leaveType: "$_id",
+                    totalDays: 1,
+                    requestCount: 1,
+                    averageDays: { $round: ["$averageDays", 2] },
+                    _id: 0
+                }
+            },
+            {
+                $lookup: {
+                    from: "leave_balances",
+                    let: {
+                        empId: queryEmployeeId,
+                        lType: "$leaveType",
+                        year: currentYear
                     },
-                },
-                {
-                    $group: {
-                        _id: null,
-                        totalDays: { $sum: "$days" },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ["$employeeId", "$$empId"] },
+                                        { $eq: ["$leaveType", "$$lType"] },
+                                        { $eq: ["$year", "$$year"] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: "balanceInfo"
+                }
+            },
+            {
+                $addFields: {
+                    allocated: { $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 0] },
+                    used: { $ifNull: [{ $arrayElemAt: ["$balanceInfo.used", 0] }, 0] },
+                    remaining: {
+                        $subtract: [
+                            { $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 0] },
+                            { $ifNull: [{ $arrayElemAt: ["$balanceInfo.used", 0] }, 0] }
+                        ]
                     },
-                },
-            ])
-            .toArray()
+                    utilizationRate: {
+                        $cond: {
+                            if: { $gt: [{ $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 1] }, 0] },
+                            then: {
+                                $multiply: [
+                                    {
+                                        $divide: [
+                                            { $ifNull: [{ $arrayElemAt: ["$balanceInfo.used", 0] }, 0] },
+                                            { $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 1] }
+                                        ]
+                                    },
+                                    100
+                                ]
+                            },
+                            else: 0
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    leaveType: 1,
+                    totalDays: 1,
+                    requestCount: 1,
+                    averageDays: 1,
+                    allocated: 1,
+                    used: 1,
+                    remaining: 1,
+                    utilizationRate: { $round: ["$utilizationRate", 2] },
+                    balanceInfo: 0
+                }
+            },
+            { $sort: { leaveType: 1 } }
+        ]
 
-        const totalUsed = usedLeaves[0]?.totalDays || 0
+        const utilization = await collection.aggregate(pipeline).toArray()
 
-        let prevStartDate: Date
-        if (timeframe === "month") {
-            prevStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-        } else if (timeframe === "quarter") {
-            const quarter = Math.floor(now.getMonth() / 3)
-            prevStartDate = new Date(now.getFullYear(), (quarter - 1) * 3, 1)
-        } else {
-            prevStartDate = new Date(now.getFullYear() - 1, 0, 1)
-        }
+        // Get overall summary
+        const summaryPipeline = [
+            {
+                $match: {
+                    employeeId: queryEmployeeId,
+                    status: "approved",
+                    startDate: {
+                        $gte: new Date(currentYear, 0, 1),
+                        $lt: new Date(currentYear + 1, 0, 1)
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalDaysUsed: { $sum: "$days" },
+                    totalRequests: { $sum: 1 }
+                }
+            }
+        ]
 
-        const prevUsedLeaves = await leaveRequestsCollection
-            .aggregate([
-                {
-                    $match: {
-                        status: "approved",
-                        startDate: { $gte: prevStartDate, $lt: startDate },
-                    },
-                },
-                {
-                    $group: {
-                        _id: null,
-                        totalDays: { $sum: "$days" },
-                    },
-                },
-            ])
-            .toArray()
+        const summaryResult = await collection.aggregate(summaryPipeline).toArray()
+        const summary = summaryResult[0] || { totalDaysUsed: 0, totalRequests: 0 }
 
-        const prevUsed = prevUsedLeaves[0]?.totalDays || 0
-        const trend = prevUsed > 0 ? Math.round(((totalUsed - prevUsed) / prevUsed) * 100) : 0
-
-        return {
-            usedDays: totalUsed,
-            allocatedDays: totalAllocated,
-            trend,
-        }
+        return serializeDocument({
+            employeeId: employeeId,
+            year: currentYear,
+            utilizationByType: utilization,
+            summary: {
+                totalDaysUsed: summary.totalDaysUsed,
+                totalRequests: summary.totalRequests,
+                averageDaysPerRequest: summary.totalRequests > 0
+                    ? parseFloat((summary.totalDaysUsed / summary.totalRequests).toFixed(2))
+                    : 0
+            }
+        })
     } catch (error: any) {
-        console.error("Error fetching leave utilization:", error.message)
+        console.error("Error fetching employee leave utilization:", error.message)
         return { error: error.message }
     }
 }
