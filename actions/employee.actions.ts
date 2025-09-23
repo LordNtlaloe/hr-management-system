@@ -62,9 +62,8 @@ export const getEmployeeByUserId = async (userId: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("employees");
-        const employee = ObjectId.isValid(userId)
-            ? await collection.findOne({ userId: new ObjectId(userId) })
-            : await collection.findOne({ userId });
+
+        const employee = await collection.findOne({ user_id: userId }); // <-- corrected field
 
         if (!employee) return null;
 
@@ -95,6 +94,7 @@ export const getEmployeeByUserId = async (userId: string) => {
         return { error: error.message };
     }
 };
+
 
 export const updateEmployee = async (id: string, updateData: Partial<z.infer<typeof EmployeeSchema>>) => {
     if (!dbConnection) await init();
