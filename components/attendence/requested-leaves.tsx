@@ -10,8 +10,7 @@ import {
 import { getEmployeeById } from "@/actions/employee.actions";
 import { useCurrentRole } from "@/hooks/use-current-role";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { LeaveRequest, Employee } from "@/types";
-import { processLeaveRequests, getEmployeeId, getEmployeeEmail, getEmployeeName } from "@/components/leaves/LeaveUtils";
+import { LeaveRequest, LeaveWithEmployee, Employee } from "@/types";
 import LeaveFilters from "@/components/leaves/LeavesFilter";
 import LeaveList from "@/components/leaves/LeavesList";
 import RejectDialog from "@/components/leaves/RejectDialog";
@@ -23,13 +22,48 @@ interface RequestedLeavesProps {
   showOnlyPending?: boolean;
   employeeId?: string;
 }
+/**
+ * Converts raw leave requests into LeaveWithEmployee
+ */
+export const processLeaveRequests = async (
+  leaves: LeaveRequest[]
+): Promise<LeaveWithEmployee[]> => {
+  const processed = await Promise.all(
+    leaves.map(async (leave) => {
+      let employee: Employee | null = null;
+
+      if (leave.employeeId && typeof leave.employeeId !== "string") {
+        employee = leave.employeeId as Employee;
+      } else if (leave.employeeId) {
+        // fetch employee by ID
+        employee = await getEmployeeById(leave.employeeId as string);
+      }
+
+      return {
+        ...leave,
+        employeeId: employee!, // ✅ full Employee object
+        employeeDetails: {
+          name: employee
+            ? `${employee.first_name} ${employee.last_name}`.trim()
+            : "Unknown Employee",
+          email: employee?.email || "Not available",
+          avatar: employee?.image || undefined,
+          employment_number: employee?.employment_number,
+          phone: employee?.phone,
+        },
+      } as LeaveWithEmployee;
+    })
+  );
+
+  return processed;
+};
 
 const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
   showOnlyPending = false,
   employeeId,
 }) => {
-  const [allLeaves, setAllLeaves] = useState<LeaveRequest[]>([]);
-  const [filteredLeaves, setFilteredLeaves] = useState<LeaveRequest[]>([]);
+  const [allLeaves, setAllLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [filteredLeaves, setFilteredLeaves] = useState<LeaveWithEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -43,54 +77,59 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
 
   const isAdmin = role === "Admin";
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        let data: LeaveRequest[] = [];
+  // Fetch leaves
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      let data: LeaveRequest[] = [];
 
-        if (showOnlyPending) {
-          const response = await getPendingLeaveRequests();
-          data = Array.isArray(response) ? response : [];
-        } else {
-          const response = await getAllLeaveRequests();
-          data = Array.isArray(response) ? response : [];
-        }
-
-        if (employeeId) {
-          data = data.filter((leave) => {
-            const leaveEmployeeId = getEmployeeId(leave.employeeId);
-            return leaveEmployeeId === employeeId;
-          });
-        }
-
-        const processedData = await processLeaveRequests(data);
-        setAllLeaves(processedData);
-        setFilteredLeaves(processedData);
-      } catch (error) {
-        console.error("Failed to fetch leave requests:", error);
-        setAllLeaves([]);
-        setFilteredLeaves([]);
-      } finally {
-        setLoading(false);
+      if (showOnlyPending) {
+        const response = await getPendingLeaveRequests();
+        data = Array.isArray(response) ? response : [];
+      } else {
+        const response = await getAllLeaveRequests();
+        data = Array.isArray(response) ? response : [];
       }
-    };
 
+      if (employeeId) {
+        data = data.filter((leave) => {
+          const leaveEmpId =
+            typeof leave.employeeId === "string"
+              ? leave.employeeId
+              : (leave.employeeId as Employee)?._id;
+          return leaveEmpId === employeeId;
+        });
+      }
+
+      const processedData = await processLeaveRequests(data);
+      setAllLeaves(processedData);
+      setFilteredLeaves(processedData);
+    } catch (error) {
+      console.error("Failed to fetch leave requests:", error);
+      setAllLeaves([]);
+      setFilteredLeaves([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [showOnlyPending, employeeId, isAdmin]);
 
+  // Filters
   useEffect(() => {
     let filtered = allLeaves;
 
     if (searchTerm) {
       filtered = filtered.filter((leave) => {
-        const employeeName = getEmployeeName(leave.employeeId);
-        const employeeEmail = getEmployeeEmail(leave.employeeId);
+        const name = leave.employeeDetails.name || "";
+        const email = leave.employeeDetails.email || "";
         const reason = leave.reason || "";
 
         return (
-          employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          employeeEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          email.toLowerCase().includes(searchTerm.toLowerCase()) ||
           reason.toLowerCase().includes(searchTerm.toLowerCase())
         );
       });
@@ -109,6 +148,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
     setFilteredLeaves(filtered);
   }, [allLeaves, searchTerm, statusFilter, leaveTypeFilter]);
 
+  // Approve
   const handleApprove = async (leaveId: string) => {
     if (!isAdmin || !user?.id) return;
 
@@ -117,7 +157,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
       const result = await approveLeaveRequest(leaveId, user.id);
 
       if (result.success) {
-        await refreshData();
+        await fetchData();
       }
     } catch (error) {
       console.error("Failed to approve leave:", error);
@@ -126,6 +166,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
     }
   };
 
+  // Reject
   const openRejectDialog = (leaveId: string) => {
     setSelectedLeaveId(leaveId);
     setRejectionReason("");
@@ -144,7 +185,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
       );
 
       if (result.success) {
-        await refreshData();
+        await fetchData();
         setRejectDialogOpen(false);
       }
     } catch (error) {
@@ -154,32 +195,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
     }
   };
 
-  const refreshData = async () => {
-    let data: LeaveRequest[] = [];
-
-    if (showOnlyPending) {
-      const response = await getPendingLeaveRequests();
-      data = Array.isArray(response) ? response : [];
-    } else {
-      const response = await getAllLeaveRequests();
-      data = Array.isArray(response) ? response : [];
-    }
-
-    if (employeeId) {
-      data = data.filter((leave) => {
-        const leaveEmployeeId = getEmployeeId(leave.employeeId);
-        return leaveEmployeeId === employeeId;
-      });
-    }
-
-    const processedData = await processLeaveRequests(data);
-    setAllLeaves(processedData);
-    setFilteredLeaves(processedData);
-  };
-
-  if (loading) {
-    return <LoadingState />;
-  }
+  if (loading) return <LoadingState />;
 
   return (
     <div className="space-y-6">

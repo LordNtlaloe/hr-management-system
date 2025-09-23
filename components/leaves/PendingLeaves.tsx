@@ -1,26 +1,58 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { LeaveRequest } from "@/types";
+import { LeaveRequest, LeaveWithEmployee, Employee } from "@/types";
 import LeaveList from "@/components/leaves/LeavesList";
 import { getAllLeaveRequests } from "@/actions/leaves.actions";
+import { getEmployeeById } from "@/actions/employee.actions";
 
 const PendingLeaves: React.FC = () => {
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+  const [leaves, setLeaves] = useState<LeaveWithEmployee[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchPendingLeaves = async () => {
-      const allLeaves = await getAllLeaveRequests();
-      console.log("All leaves:", allLeaves); // Debug: check all leaves
+      try {
+        const allLeaves: LeaveRequest[] = await getAllLeaveRequests();
 
-      const pendingLeaves = allLeaves.filter(
-        (leave: { status: string }) => leave.status.toLowerCase() === "pending"
-      );
+        // Filter only pending leaves
+        const pendingLeaves = allLeaves.filter(
+          (leave) => leave.status.toLowerCase() === "pending"
+        );
 
-      console.log("Pending leaves:", pendingLeaves); // Debug: check filtered results
-      setLeaves(pendingLeaves);
-      setLoading(false);
+        // Transform to LeaveWithEmployee[]
+        const leavesWithDetails: LeaveWithEmployee[] = await Promise.all(
+          pendingLeaves.map(async (leave) => {
+            let employee: Employee | null = null;
+
+            if (leave.employeeId && typeof leave.employeeId !== "string") {
+              employee = leave.employeeId;
+            } else if (leave.employeeId) {
+              employee = await getEmployeeById(leave.employeeId as string);
+            }
+
+            return {
+              ...leave,
+              employeeId: employee!, // full Employee object
+              employeeDetails: {
+                name: employee
+                  ? `${employee.first_name} ${employee.last_name}`.trim()
+                  : "Unknown Employee",
+                email: employee?.email || "Not available",
+                avatar: employee?.image || undefined,
+                employment_number: employee?.employment_number,
+                phone: employee?.phone,
+              },
+            } as LeaveWithEmployee;
+          })
+        );
+
+        setLeaves(leavesWithDetails);
+      } catch (error) {
+        console.error("Failed to fetch pending leaves:", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchPendingLeaves();

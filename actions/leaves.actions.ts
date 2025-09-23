@@ -70,17 +70,16 @@ export const createLeaveRequest = async (leaveData: any) => {
     try {
         const collection = await database?.collection("leave_requests")
 
-        let employeeIdObj
-        try {
-            employeeIdObj = normalizeObjectId(leaveData.employeeId)
-        } catch (error) {
-            console.error("Error converting employeeId to ObjectId:", error)
-            employeeIdObj = leaveData.employeeId
+        // Always convert to ObjectId, throw error if invalid
+        if (!leaveData.employeeId) {
+            throw new Error("employeeId is required")
         }
+
+        const employeeIdObj = normalizeObjectId(leaveData.employeeId)
 
         const leave = {
             ...leaveData,
-            employeeId: employeeIdObj,
+            employeeId: employeeIdObj,  // Always store as ObjectId
             status: "pending",
             appliedDate: new Date(),
             createdAt: new Date(),
@@ -94,7 +93,6 @@ export const createLeaveRequest = async (leaveData: any) => {
         return { error: error.message }
     }
 }
-
 // 🔹 Get Leave Request by ID
 export const getLeaveRequestById = async (id: string) => {
     if (!dbConnection) await init()
@@ -303,7 +301,6 @@ export const getEmployeeLeaveRequests = async (
     }
 }
 
-// 🔹 Get All Leave Requests (Admin)
 export const getAllLeaveRequests = async () => {
     if (!dbConnection) await init()
     try {
@@ -312,56 +309,58 @@ export const getAllLeaveRequests = async () => {
         const leaves = await collection
             .aggregate([
                 {
-                    $lookup: {
-                        from: "employees",
-                        let: {
-                            empId: {
-                                $cond: {
-                                    if: { $eq: [{ $type: "$employeeId" }, "string"] },
-                                    then: { $toObjectId: "$employeeId" },
-                                    else: "$employeeId",
+                    $addFields: {
+                        employeeObjectId: {
+                            $cond: {
+                                if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                                then: {
+                                    $cond: {
+                                        if: { $eq: [{ $strLenCP: "$employeeId" }, 24] },
+                                        then: { $toObjectId: "$employeeId" },
+                                        else: null
+                                    }
                                 },
+                                else: "$employeeId",
                             },
                         },
-                        pipeline: [
-                            { $match: { $expr: { $eq: ["$_id", "$$empId"] } } },
-                            {
-                                $project: {
-                                    _id: 1,
-                                    first_name: 1,
-                                    last_name: 1,
-                                    email: 1,
-                                    phone: 1,
-                                    section_name: 1,
-                                    position_title: 1,
-                                    employment_number: 1,
-                                    image: 1,
-                                },
-                            },
-                        ],
+                    },
+                },
+                {
+                    $lookup: {
+                        from: "employees",
+                        localField: "employeeObjectId",
+                        foreignField: "_id",
                         as: "employee",
                     },
                 },
-                { $unwind: "$employee" },
+                {
+                    $match: {
+                        "employee.0": { $exists: true }
+                    }
+                },
+                { $unwind: { path: "$employee", preserveNullAndEmptyArrays: true } }, // Keep leaves even if no employee
                 {
                     $addFields: {
-                        employeeId: "$employee",
+                        employeeId: "$employee", // This will be null if no employee found
                     },
                 },
                 {
-                    $project: { employee: 0 },
+                    $project: {
+                        employee: 0,
+                        employeeObjectId: 0
+                    },
                 },
                 { $sort: { appliedDate: -1 } },
             ])
             .toArray()
 
+        console.log(`Found ${leaves.length} leaves`)
         return serializeDocument(leaves)
     } catch (error: any) {
         console.error("Error fetching leave requests:", error.message)
         return []
     }
 }
-
 // 🔹 Get Pending Leave Requests
 export const getPendingLeaveRequests = async () => {
     if (!dbConnection) await init()
@@ -802,5 +801,70 @@ export const getEmployeeLeaveUtilization = async (employeeId: string, year?: num
     } catch (error: any) {
         console.error("Error fetching employee leave utilization:", error.message)
         return { error: error.message }
+    }
+}
+
+export const getAllLeaveRequestsAlternative = async () => {
+    if (!dbConnection) await init()
+    try {
+        const leavesCollection = await database?.collection("leave_requests")
+        const employeesCollection = await database?.collection("employees")
+
+        // Get all leaves
+        const leaves = await leavesCollection
+            .find({})
+            .sort({ appliedDate: -1 })
+            .toArray()
+
+        console.log(`Found ${leaves.length} total leave requests`)
+
+        // Get all employees and create a lookup map
+        const employees = await employeesCollection.find({}).toArray()
+        const employeeMap = new Map()
+
+        employees.forEach((emp: any) => {
+            // Store both string and ObjectId versions for lookup
+            employeeMap.set(emp._id.toString(), emp)
+            employeeMap.set(emp._id, emp) // Also store the ObjectId as key
+        })
+
+        console.log(`Found ${employees.length} employees`)
+
+        // Manually join the data with better ID matching
+        const leavesWithEmployees = leaves.map((leave: any) => {
+            let employeeIdStr: string
+
+            // Convert employeeId to string for consistent lookup
+            if (typeof leave.employeeId === 'string') {
+                employeeIdStr = leave.employeeId
+            } else if (leave.employeeId && typeof leave.employeeId === 'object') {
+                employeeIdStr = leave.employeeId.toString()
+            } else {
+                console.warn(`Invalid employeeId format for leave ${leave._id}:`, leave.employeeId)
+                employeeIdStr = ''
+            }
+
+            const employee = employeeMap.get(employeeIdStr) || employeeMap.get(leave.employeeId)
+
+            if (employee) {
+                return {
+                    ...leave,
+                    employeeId: employee  // Replace the ID with the full employee object
+                }
+            } else {
+                console.warn(`No employee found for ID: ${employeeIdStr} in leave ${leave._id}`)
+                // Still return the leave but with null employee data
+                return {
+                    ...leave,
+                    employeeId: null
+                }
+            }
+        })
+
+        console.log(`Successfully matched ${leavesWithEmployees.filter((l: { employeeId: null }) => l.employeeId !== null).length} leaves with employees`)
+        return serializeDocument(leavesWithEmployees)
+    } catch (error: any) {
+        console.error("Error fetching leave requests (alternative):", error.message)
+        return []
     }
 }

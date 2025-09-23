@@ -108,3 +108,15 @@ export interface LeaveRequest {
   createdAt: string
   updatedAt: string
 }
+
+
+export interface LeaveWithEmployee extends LeaveRequest {
+  employeeDetails: {
+    name: string;
+    email: string;
+    avatar?: string;
+    employment_number?: string;
+    phone?: string;
+  };
+}
+

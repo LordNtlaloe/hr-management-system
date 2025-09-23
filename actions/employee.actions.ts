@@ -172,6 +172,8 @@ export const getAllEmployees = async (includeInactive = false) => {
     }
 };
 
+
+
 export const getEmployeesByDepartment = async (departmentId: string) => {
     if (!dbConnection) await init();
     try {

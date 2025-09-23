@@ -1,9 +1,9 @@
 import React from "react";
-import { LeaveRequest } from "@/types";
-import LeaveCard from "@/components/leaves/LeaveCard";
+import { LeaveWithEmployee } from "@/types";
+import LeaveCard from "./LeaveCard";
 
 interface LeaveListProps {
-  leaves: LeaveRequest[];
+  leaves: LeaveWithEmployee[];
   isAdmin: boolean;
   processing: string | null;
   onApprove: (leaveId: string) => void;

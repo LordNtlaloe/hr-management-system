@@ -3,24 +3,171 @@
 import React, { useEffect, useState } from "react";
 import { useCurrentRole } from "@/hooks/use-current-role";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import Calendar from "@/components/calendar/Calendar";
-import RequestedLeaves from "@/components/attendence/requested-leaves";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CalendarDays, ClipboardList, Users, BarChart3 } from "lucide-react";
 import LeaveList from "@/components/leaves/LeavesList";
+import Calendar from "@/components/calendar/Calendar";
+import MyRequests from "@/components/leaves/MyRequests";
+import { LeaveRequest, LeaveWithEmployee, Employee } from "@/types";
 import {
   getAllLeaveRequests,
-  getEmployeeLeaveRequests,
-} from "@/actions/leaves.actions"; // 🔑 you’ll implement these
-import { LeaveRequest } from "@/types";
-import PendingLeaves from "@/components/leaves/PendingLeaves";
-import MyRequests from "@/components/leaves/MyRequests";
+  getPendingLeaveRequests,
+  approveLeaveRequest,
+  rejectLeaveRequest,
+} from "@/actions/leaves.actions";
+import {
+  getEmployeeById,
+  getEmployeeByUserId,
+} from "@/actions/employee.actions";
+import { toast } from "sonner";
 
 const LeavesPage: React.FC = () => {
   const { role } = useCurrentRole();
   const user = useCurrentUser();
+  const [allLeaves, setAllLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [pendingLeaves, setPendingLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<string | null>(null);
+  const [employeeId, setEmployeeId] = useState<string | null>(null);
 
-  if (!user || !role) {
+  // 🔹 Fetch employeeId for current user
+  useEffect(() => {
+    const fetchEmployee = async () => {
+      if (user?.id) {
+        try {
+          const employee = await getEmployeeByUserId(user.id);
+          if (employee && employee._id) {
+            setEmployeeId(employee._id);
+          }
+        } catch (err) {
+          console.error("Failed to fetch employee for user", err);
+        }
+      }
+    };
+    fetchEmployee();
+  }, [user]);
+
+  const fetchLeaves = async () => {
+    setLoading(true);
+    try {
+      const allLeavesData: LeaveRequest[] = await getAllLeaveRequests();
+
+      const leavesWithEmployees: LeaveWithEmployee[] = await Promise.all(
+        allLeavesData.map(async (leave) => {
+          let employeeData: Employee | null = null;
+          let empId: string = "";
+
+          if (
+            leave.employeeId &&
+            typeof leave.employeeId === "object" &&
+            leave.employeeId._id
+          ) {
+            employeeData = leave.employeeId as Employee;
+            empId = employeeData._id;
+          } else if (leave.employeeId) {
+            try {
+              empId =
+                typeof leave.employeeId === "string"
+                  ? leave.employeeId
+                  : leave.employeeId.toString();
+
+              employeeData = await getEmployeeById(empId);
+            } catch (error) {
+              console.warn(
+                `Failed to fetch employee data for ID: ${empId}`,
+                error
+              );
+            }
+          }
+
+          const employeeDetails = {
+            name: employeeData
+              ? `${employeeData.first_name} ${employeeData.last_name}`.trim()
+              : "Unknown Employee",
+            email: employeeData?.email || "Not available",
+            avatar: employeeData?.image,
+            employment_number: employeeData?.employment_number || "N/A",
+            phone: employeeData?.phone || "Not available",
+          };
+
+          return { ...leave, employeeDetails };
+        })
+      );
+
+      leavesWithEmployees.sort(
+        (a, b) =>
+          new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime()
+      );
+
+      setAllLeaves(leavesWithEmployees);
+      setPendingLeaves(
+        leavesWithEmployees.filter((l) => l.status === "pending")
+      );
+    } catch (err) {
+      console.error("Error fetching leaves:", err);
+      toast.error("Failed to fetch leave requests");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (leaveId: string) => {
+    if (!user?.id) {
+      toast.error("User not authenticated");
+      return;
+    }
+
+    setProcessing(leaveId);
+    try {
+      const result = await approveLeaveRequest(leaveId, user.id);
+
+      if (result.success) {
+        toast.success("Leave request approved successfully");
+        await fetchLeaves();
+      } else {
+        toast.error(result.error || "Failed to approve leave request");
+      }
+    } catch (error) {
+      console.error("Error approving leave:", error);
+      toast.error("Failed to approve leave request");
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  const handleReject = async (leaveId: string) => {
+    if (!user?.id) {
+      toast.error("User not authenticated");
+      return;
+    }
+
+    setProcessing(leaveId);
+    try {
+      const result = await rejectLeaveRequest(
+        leaveId,
+        user.id,
+        "Rejected by admin"
+      );
+
+      if (result.success) {
+        toast.success("Leave request rejected successfully");
+        await fetchLeaves();
+      } else {
+        toast.error(result.error || "Failed to reject leave request");
+      }
+    } catch (error) {
+      console.error("Error rejecting leave:", error);
+      toast.error("Failed to reject leave request");
+    } finally {
+      setProcessing(null);
+    }
+  };
+
+  useEffect(() => {
+    fetchLeaves();
+  }, []);
+
+  if (!user || !role || loading || (role === "Employee" && !employeeId)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
@@ -28,7 +175,7 @@ const LeavesPage: React.FC = () => {
     );
   }
 
-  // Employee view
+  // 🔹 Employee view
   if (role === "Employee") {
     return (
       <div className="container mx-auto p-6 space-y-6">
@@ -56,7 +203,7 @@ const LeavesPage: React.FC = () => {
           </TabsList>
 
           <TabsContent value="calendar" className="mt-6">
-            <Calendar employeeId={user.id!} />
+            <Calendar employeeId={employeeId!} /> {/* ✅ fixed */}
           </TabsContent>
 
           <TabsContent value="requests" className="mt-6">
@@ -67,7 +214,7 @@ const LeavesPage: React.FC = () => {
     );
   }
 
-  // Admin/Manager view
+  // 🔹 Admin/Manager view
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -85,11 +232,11 @@ const LeavesPage: React.FC = () => {
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="pending" className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
-            Pending Requests
+            Pending Requests ({pendingLeaves.length})
           </TabsTrigger>
           <TabsTrigger value="all-requests" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            All Requests
+            All Requests ({allLeaves.length})
           </TabsTrigger>
           <TabsTrigger value="calendar" className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4" />
@@ -102,87 +249,47 @@ const LeavesPage: React.FC = () => {
         </TabsList>
 
         <TabsContent value="pending" className="mt-6">
-          <PendingLeaves />
+          {pendingLeaves.length > 0 ? (
+            <LeaveList
+              leaves={pendingLeaves}
+              isAdmin={true}
+              processing={processing}
+              onApprove={handleApprove}
+              onReject={handleReject}
+            />
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-500">No pending leave requests</p>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="all-requests" className="mt-6">
-          <RequestedLeaves />
+          {allLeaves.length > 0 ? (
+            <LeaveList
+              leaves={allLeaves}
+              isAdmin={true}
+              processing={processing}
+              onApprove={handleApprove}
+              onReject={handleReject}
+            />
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-500">No leave requests found</p>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="calendar" className="mt-6">
-          <TeamCalendar />
+          <Calendar employeeId={employeeId!} /> {/* show all employees */}
         </TabsContent>
 
         <TabsContent value="reports" className="mt-6">
-          <LeaveReports />
+          <div className="text-center py-8">
+            <p className="text-gray-500">Charts and analytics coming soon 🚀</p>
+          </div>
         </TabsContent>
       </Tabs>
-    </div>
-  );
-};
-
-// Employee’s own requests
-const EmployeeLeaveRequests: React.FC<{ employeeId: string }> = ({
-  employeeId,
-}) => {
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-
-  useEffect(() => {
-    getEmployeeLeaveRequests(employeeId).then(setLeaves);
-  }, [employeeId]);
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">My Leave Requests</h2>
-      <LeaveList
-        leaves={leaves}
-        isAdmin={false}
-        processing={null}
-        onApprove={() => {}}
-        onReject={() => {}}
-      />
-    </div>
-  );
-};
-
-// Admin view - all requests
-const AllLeaveRequests: React.FC = () => {
-  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
-
-  useEffect(() => {
-    getAllLeaveRequests().then(setLeaves);
-  }, []);
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">All Leave Requests</h2>
-      <LeaveList
-        leaves={leaves}
-        isAdmin={true}
-        processing={null}
-        onApprove={(id) => console.log("Approve", id)}
-        onReject={(id) => console.log("Reject", id)}
-      />
-    </div>
-  );
-};
-
-// Team calendar view
-const TeamCalendar: React.FC = () => {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Team Calendar</h2>
-      <Calendar employeeId="" /> {/* show all employees */}
-    </div>
-  );
-};
-
-// Reports tab
-const LeaveReports: React.FC = () => {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">Leave Reports</h2>
-      <p className="text-gray-500">Charts and analytics coming soon 🚀</p>
     </div>
   );
 };

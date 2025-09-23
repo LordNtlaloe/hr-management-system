@@ -18,6 +18,7 @@ import {
   getEmployeeLeaveRequests,
   createLeaveRequest,
 } from "@/actions/leaves.actions";
+import { getEmployeeByUserId } from "@/actions/employee.actions";
 import { useCurrentRole } from "@/hooks/use-current-role";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
@@ -34,33 +35,56 @@ interface LeaveEvent extends EventInput {
   };
 }
 
-const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
+// ✅ Add props interface to fix TS error
+interface CalendarProps {
+  employeeId?: string; // optional, undefined for Admin/Manager view
+}
+
+const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
   const [selectedLeave, setSelectedLeave] = useState<LeaveEvent | null>(null);
   const [leaveType, setLeaveType] = useState<LeaveType>(LeaveType.ANNUAL);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
   const [events, setEvents] = useState<LeaveEvent[]>([]);
+  const [employeeId, setEmployeeId] = useState<string | null>(
+    propEmployeeId || null
+  );
+
   const calendarRef = useRef<FullCalendar>(null);
   const { isOpen, openModal, closeModal } = useModal();
   const { role } = useCurrentRole();
   const user = useCurrentUser();
   const isEmployee = role === "Employee";
 
-  // Debug logs
+  // Step 1: Resolve employeeId from userId (only if employee view)
   useEffect(() => {
-    console.log("Calendar component received employeeId:", employeeId);
-    console.log("EmployeeId type:", typeof employeeId);
-    console.log("Current user:", user);
-  }, [employeeId, user]);
+    const fetchEmployee = async () => {
+      if (!propEmployeeId && user?.id && isEmployee) {
+        const employee = await getEmployeeByUserId(user.id);
+        if (employee && employee._id) {
+          setEmployeeId(employee._id);
+          console.log("Resolved employeeId:", employee._id);
+        }
+      }
+    };
+    fetchEmployee();
+  }, [user, propEmployeeId, isEmployee]);
 
+  // Step 2: Fetch leave requests
   useEffect(() => {
     const fetchLeaveEvents = async () => {
       try {
-        console.log("Fetching leave events for employeeId:", employeeId);
-        const response = await getEmployeeLeaveRequests(employeeId);
-        console.log("Leave requests response:", response);
-        
+        // Admin/Manager: fetch all employees' leaves if employeeId is null
+        if (!employeeId && !isEmployee) return;
+
+        const targetEmployeeId = employeeId;
+        if (!targetEmployeeId) return;
+
+        console.log("Fetching leave events for employeeId:", targetEmployeeId);
+
+        const response = await getEmployeeLeaveRequests(targetEmployeeId);
+
         if (Array.isArray(response)) {
           const formattedEvents: LeaveEvent[] = response.map((leave: any) => ({
             id: leave._id,
@@ -75,17 +99,14 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
             },
           }));
           setEvents(formattedEvents);
-          console.log("Formatted events:", formattedEvents);
         }
       } catch (error) {
         console.error("Failed to fetch leave events", error);
       }
     };
-    
-    if (employeeId) {
-      fetchLeaveEvents();
-    }
-  }, [employeeId]);
+
+    fetchLeaveEvents();
+  }, [employeeId, isEmployee]);
 
   const handleDateSelect = (selectInfo: DateSelectArg) => {
     if (!isEmployee) return;
@@ -105,11 +126,14 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
   };
 
   const handleSubmitLeaveRequest = async () => {
+    if (!employeeId) {
+      console.error("No employeeId found for user");
+      return;
+    }
+
     try {
-      console.log("Submitting leave request with employeeId:", employeeId);
-      
       const leaveData = {
-        employeeId: employeeId, // Ensure this is the correct ID
+        employeeId,
         leaveType,
         startDate: new Date(startDate),
         endDate: new Date(endDate),
@@ -117,10 +141,7 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
         days: calculateDaysDifference(new Date(startDate), new Date(endDate)),
       };
 
-      console.log("Sending leave data:", leaveData);
-      
       const result = await createLeaveRequest(leaveData);
-      console.log("Create leave request result:", result);
 
       if (result.success) {
         const newEvent: LeaveEvent = {
@@ -164,10 +185,8 @@ const Calendar: React.FC<{ employeeId: string }> = ({ employeeId }) => {
     const start = new Date(span.start);
     const end = new Date(span.end);
 
-    // 1. Block past dates
     if (start < today) return false;
 
-    // 2. Block if range overlaps existing leaves
     for (let event of events) {
       const eventStart = new Date(event.start as string);
       const eventEnd = new Date(event.end as string);
