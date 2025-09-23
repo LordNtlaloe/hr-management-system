@@ -25,9 +25,7 @@ const init = async () => {
         console.error("Database connection failed:", error);
         throw error;
     }
-}
-
-// Employee CRUD Operations
+}// Employee CRUD Operations
 export const createEmployee = async (employeeData: z.infer<typeof EmployeeSchema>) => {
     if (!dbConnection) await init();
     try {
@@ -45,11 +43,12 @@ export const createEmployee = async (employeeData: z.infer<typeof EmployeeSchema
         console.error("Error creating employee:", error.message);
         return { error: error.message };
     }
-}
+};
 
 export const getEmployeeById = async (id: string) => {
     if (!dbConnection) await init();
     try {
+        if (!ObjectId.isValid(id)) return { error: "Invalid employee ID" };
         const collection = await database?.collection("employees");
         const employee = await collection.findOne({ _id: new ObjectId(id) });
         return employee ? { ...employee, _id: employee._id.toString() } : null;
@@ -57,26 +56,30 @@ export const getEmployeeById = async (id: string) => {
         console.error("Error fetching employee:", error.message);
         return { error: error.message };
     }
-}
+};
 
 export const getEmployeeByUserId = async (userId: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("employees");
-        const employee = await collection.findOne({ userId: new ObjectId(userId) });
+        const employee = ObjectId.isValid(userId)
+            ? await collection.findOne({ userId: new ObjectId(userId) })
+            : await collection.findOne({ userId });
+
         if (!employee) return null;
 
         const positionCollection = await database?.collection("positions");
         const departmentCollection = await database?.collection("departments");
 
-        const position = employee.positionId
+        const position = employee.positionId && ObjectId.isValid(employee.positionId)
             ? await positionCollection.findOne({ _id: new ObjectId(employee.positionId) })
             : null;
-        const section = employee.departmentId
+
+        const section = employee.departmentId && ObjectId.isValid(employee.departmentId)
             ? await departmentCollection.findOne({ _id: new ObjectId(employee.departmentId) })
             : null;
 
-        const managerName = employee.managerId
+        const managerName = employee.managerId && ObjectId.isValid(employee.managerId)
             ? await getEmployeeName(employee.managerId)
             : null;
 
@@ -96,6 +99,7 @@ export const getEmployeeByUserId = async (userId: string) => {
 export const updateEmployee = async (id: string, updateData: Partial<z.infer<typeof EmployeeSchema>>) => {
     if (!dbConnection) await init();
     try {
+        if (!ObjectId.isValid(id)) return { error: "Invalid employee ID" };
         const collection = await database?.collection("employees");
         const result = await collection.updateOne(
             { _id: new ObjectId(id) },
@@ -106,11 +110,12 @@ export const updateEmployee = async (id: string, updateData: Partial<z.infer<typ
         console.error("Error updating employee:", error.message);
         return { error: error.message };
     }
-}
+};
 
 export const deleteEmployee = async (id: string) => {
     if (!dbConnection) await init();
     try {
+        if (!ObjectId.isValid(id)) return { error: "Invalid employee ID" };
         const collection = await database?.collection("employees");
         const result = await collection.updateOne(
             { _id: new ObjectId(id) },
@@ -121,7 +126,7 @@ export const deleteEmployee = async (id: string) => {
         console.error("Error deleting employee:", error.message);
         return { error: error.message };
     }
-}
+};
 
 export const getAllEmployees = async (includeInactive = false) => {
     if (!dbConnection) await init();
@@ -138,23 +143,24 @@ export const getAllEmployees = async (includeInactive = false) => {
                 const positionId = employee.positionId || employee.position_id;
                 const departmentId = employee.departmentId || employee.department_id;
 
-                const position = positionId ? await positionCollection.findOne({
-                    _id: new ObjectId(positionId)
-                }) : null;
+                const position = positionId && ObjectId.isValid(positionId)
+                    ? await positionCollection.findOne({ _id: new ObjectId(positionId) })
+                    : null;
 
-                const section = departmentId ? await departmentCollection.findOne({
-                    _id: new ObjectId(departmentId)
-                }) : null;
+                const section = departmentId && ObjectId.isValid(departmentId)
+                    ? await departmentCollection.findOne({ _id: new ObjectId(departmentId) })
+                    : null;
 
                 return {
                     ...employee,
                     _id: employee._id.toString(),
                     position_title: position?.position_title || "Unknown",
                     department_name: section?.department_name || "Unknown",
-                    manager_name: employee.managerId ?
-                        await getEmployeeName(employee.managerId) : null,
-                    positionId: positionId,
-                    departmentId: departmentId
+                    manager_name: employee.managerId && ObjectId.isValid(employee.managerId)
+                        ? await getEmployeeName(employee.managerId)
+                        : null,
+                    positionId,
+                    departmentId
                 };
             })
         );
@@ -164,16 +170,21 @@ export const getAllEmployees = async (includeInactive = false) => {
         console.error("Error fetching employees:", error.message);
         return { error: error.message };
     }
-}
+};
 
 export const getEmployeesByDepartment = async (departmentId: string) => {
     if (!dbConnection) await init();
     try {
         const collection = await database?.collection("employees");
-        const employees = await collection.find({
-            departmentId: departmentId,
-            isActive: { $ne: false }
-        }).toArray();
+        const filter: any = { isActive: { $ne: false } };
+
+        if (ObjectId.isValid(departmentId)) {
+            filter.departmentId = new ObjectId(departmentId);
+        } else {
+            filter.departmentId = departmentId;
+        }
+
+        const employees = await collection.find(filter).toArray();
 
         return employees.map((employee: any) => ({
             ...employee,
@@ -183,11 +194,12 @@ export const getEmployeesByDepartment = async (departmentId: string) => {
         console.error("Error fetching section employees:", error.message);
         return { error: error.message };
     }
-}
+};
 
 export const linkEmployeeWithUser = async (employeeId: string, userId: string) => {
     if (!dbConnection) await init();
     try {
+        if (!ObjectId.isValid(employeeId)) return { error: "Invalid employee ID" };
         const collection = await database?.collection("employees");
         const result = await collection.updateOne(
             { _id: new ObjectId(employeeId) },
@@ -203,7 +215,10 @@ export const linkEmployeeWithUser = async (employeeId: string, userId: string) =
         console.error("Error linking employee with user:", error.message);
         return { error: error.message };
     }
-}
+};
+
+// --- SKIPPING unchanged EmployeeDetails CRUD (same as yours) ---
+
 
 // Employee Details CRUD Operations
 export const createEmployeeDetails = async (detailsData: z.infer<typeof EmployeeDetailsSchema>) => {
