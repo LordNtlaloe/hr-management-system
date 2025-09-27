@@ -1,124 +1,93 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { useRouter } from "next/navigation";
 
-export const columns: ColumnDef<any>[] = [
-  {
-    id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        checked={
-          table.getIsAllPageRowsSelected() ||
-          (table.getIsSomePageRowsSelected() && "indeterminate")
-        }
-        onCheckedChange={(value: any) =>
-          table.toggleAllPageRowsSelected(!!value)
-        }
-        aria-label="Select all"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        checked={row.getIsSelected()}
-        onCheckedChange={(value: any) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-      />
-    ),
-    enableSorting: false,
-    enableHiding: false,
-  },
-  {
-    accessorKey: "employment_number", // <-- match the field in your data
-    header: "Employee Number",
-    cell: ({ row }) => (
-      <div className="truncate max-w-[100px]">
-        {row.getValue("employment_number")}
-      </div>
-    ),
-  },
+export type EmployeeDetails = {
+  _id: string;
+  surname: string;
+  other_names: string;
+  current_address: string;
+  date_of_birth: string;
+  age: number;
+  gender: "male" | "female";
+  place_of_birth: string;
+  is_citizen: boolean;
+  citizen_info?: {
+    chief_name: string;
+    district: string;
+    tax_id: string;
+  };
+  non_citizen_info?: {
+    certificate_number: string;
+    date_of_issue: string;
+    present_nationality: string;
+  };
+};
 
+export const columns: ColumnDef<EmployeeDetails>[] = [
   {
-    accessorKey: "name",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
-      );
-    },
-    cell: ({ row }) => (
-      <div className="font-medium">{`${row.original.first_name || ""} ${row.original.last_name || ""}`}</div>
-    ),
+    accessorKey: "surname",
+    header: "Surname",
   },
   {
-    accessorKey: "email",
-    header: "Email",
-    cell: ({ row }) => <div>{row.original.email || ""}</div>,
+    accessorKey: "other_names",
+    header: "Other Names",
   },
   {
-    accessorKey: "department_name", // Match the key from server response
-    header: "Section",
-    cell: ({ row }) => (
-      <div>{row.getValue("department_name") || "Unknown"}</div>
-    ),
+    accessorKey: "current_address",
+    header: "Current Address",
   },
   {
-    accessorKey: "position_title", // Match the key from server response
-    header: "Position",
-    cell: ({ row }) => <div>{row.getValue("position_title") || "Unknown"}</div>,
+    accessorKey: "date_of_birth",
+    header: "Date of Birth",
   },
   {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => {
-      const status = row.original.status || "active";
-      let variant: "default" | "secondary" | "destructive" | "outline" =
-        "outline";
-
-      if (status === "active") variant = "default";
-      if (status === "on-leave") variant = "secondary";
-      if (status === "terminated") variant = "destructive";
-      if (status === "retired") variant = "outline"
-
-      return (
-        <Badge variant={variant}>
-          {String(status).charAt(0).toUpperCase() +
-            String(status).slice(1).replace("-", " ")}
-        </Badge>
-      );
-    },
+    accessorKey: "age",
+    header: "Age",
   },
   {
-    accessorKey: "hire_date",
-    header: "Hire Date",
-    cell: ({ row }) => {
-      const date = row.original.hire_date
-        ? new Date(row.original.hire_date)
-        : null;
-      return <div>{date ? date.toLocaleDateString() : "N/A"}</div>;
-    },
+    accessorKey: "gender",
+    header: "Gender",
+  },
+  {
+    accessorKey: "place_of_birth",
+    header: "Place of Birth",
+  },
+  {
+    accessorKey: "is_citizen",
+    header: "Citizen?",
+    cell: ({ row }) => (row.original.is_citizen ? "Yes" : "No"),
+  },
+  {
+    accessorKey: "citizen_info",
+    header: "Citizen Info",
+    cell: ({ row }) =>
+      row.original.is_citizen && row.original.citizen_info
+        ? `${row.original.citizen_info.chief_name}, ${row.original.citizen_info.district}, ${row.original.citizen_info.tax_id}`
+        : "-",
+  },
+  {
+    accessorKey: "non_citizen_info",
+    header: "Non-Citizen Info",
+    cell: ({ row }) =>
+      !row.original.is_citizen && row.original.non_citizen_info
+        ? `${row.original.non_citizen_info.certificate_number}, ${row.original.non_citizen_info.date_of_issue}, ${row.original.non_citizen_info.present_nationality}`
+        : "-",
   },
   {
     id: "actions",
-    enableHiding: false,
+    header: "Actions",
     cell: ({ row }) => {
-      const router = useRouter();
       const employee = row.original;
 
       return (
@@ -132,14 +101,18 @@ export const columns: ColumnDef<any>[] = [
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
             <DropdownMenuItem
-              onClick={() => router.push(`/employees/${employee._id}`)}
-            >
-              View/Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem
               onClick={() => navigator.clipboard.writeText(employee._id)}
             >
-              Copy ID
+              Copy Employee ID
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => console.log("Edit", employee._id)}>
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => console.log("Delete", employee._id)}
+            >
+              Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
