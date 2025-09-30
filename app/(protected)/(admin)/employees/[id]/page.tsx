@@ -1,4 +1,6 @@
 // app/(protected)/(admin)/employees/[id]/page.tsx
+"use client";
+
 import { notFound } from "next/navigation";
 import { getEmployeeById } from "@/actions/employee.actions";
 import EmployeeDetailsCard from "@/components/dashboard/employees/BasicEmployeeInfo";
@@ -6,42 +8,30 @@ import LegalInfoCard from "@/components/dashboard/employees/LegalInfoCard";
 import EducationHistoryCard from "@/components/dashboard/employees/EducationHistoryCard";
 import EmploymentHistoryCard from "@/components/dashboard/employees/EmploymentHistoryCard";
 import ReferencesCard from "@/components/dashboard/employees/ReferencesCard";
+import EmployeeTimeline from "@/components/dashboard/employees/employee-timeline";
 
-// --------------------
-// Types
-// --------------------
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 interface EmployeeProfilePageProps {
   params: Promise<{ id: string }>;
 }
 
-// --------------------
-// Page Component
-// --------------------
 export default async function EmployeeProfilePage({
   params,
 }: EmployeeProfilePageProps) {
   const { id } = await params;
 
-  console.log("EmployeeProfilePage - ID from params:", id); // Debug log
-
-  // Fetch employee from DB
   const employeeResult = await getEmployeeById(id);
-
   if (!employeeResult || !employeeResult._id) {
-    console.log("EmployeeProfilePage - Employee not found for ID:", id); // Debug log
     return notFound();
   }
 
-  console.log("EmployeeProfilePage - Employee found:", employeeResult._id); // Debug log
-
-  // Destructure sections from employee schema
   const {
     employee_details,
     legal_info,
     education_history,
     employment_history,
     references,
-    _id, // Get the actual employee ID from the result
   } = employeeResult;
 
   return (
@@ -59,31 +49,42 @@ export default async function EmployeeProfilePage({
         </div>
       </div>
 
-      {/* Profile Sections */}
-      <div className="flex flex-col space-y-6">
-        {/* Top Section - Employee Details */}
-        <EmployeeDetailsCard
-          details={employee_details}
-          employeeId={id} // ✅ FIX: Pass the actual ID from params
-          profilePicture={employee_details?.profile_picture}
-        />
+      {/* Tabs */}
+      <Tabs defaultValue="details" className="w-full">
+        <TabsList>
+          <TabsTrigger value="details">Employee Details</TabsTrigger>
+          <TabsTrigger value="employment">Employment Details</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+        </TabsList>
 
-        {/* Legal Info */}
-        <LegalInfoCard legal={legal_info} />
+        {/* Employee Details */}
+        <TabsContent value="details" className="space-y-6 mt-6">
+          <EmployeeDetailsCard
+            details={employee_details}
+            employeeId={id}
+            profilePicture={employee_details?.profile_picture}
+          />
+          <LegalInfoCard legal={legal_info} />
+        </TabsContent>
 
-        {/* Education & Employment History */}
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1 space-y-6">
-            <EducationHistoryCard education={education_history} />
+        {/* Employment Details */}
+        <TabsContent value="employment" className="space-y-6 mt-6">
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1 space-y-6">
+              <EducationHistoryCard education={education_history} />
+            </div>
+            <div className="flex-1 space-y-6">
+              <EmploymentHistoryCard employment={employment_history} />
+            </div>
           </div>
-          <div className="flex-1 space-y-6">
-            <EmploymentHistoryCard employment={employment_history} />
-          </div>
-        </div>
+          <ReferencesCard references={references} />
+        </TabsContent>
 
-        {/* References */}
-        <ReferencesCard references={references} />
-      </div>
+        {/* Timeline */}
+        <TabsContent value="timeline" className="mt-6">
+          <EmployeeTimeline employeeId={id} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
