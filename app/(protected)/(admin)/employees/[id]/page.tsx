@@ -133,10 +133,6 @@ export default function EmployeeProfilePage({
             profilePicture={employee_details?.profile_picture}
           />
           <LegalInfoCard legal={legal_info} />
-        </TabsContent>
-
-        {/* Employment Details */}
-        <TabsContent value="employment" className="space-y-6 mt-6">
           <div className="flex flex-col md:flex-row gap-6">
             <div className="flex-1 space-y-6">
               <EducationHistoryCard education={education_history} />
@@ -148,9 +144,14 @@ export default function EmployeeProfilePage({
           <ReferencesCard references={references} />
         </TabsContent>
 
+        {/* Employment Details */}
+        <TabsContent value="employment" className="space-y-6 mt-6">
+          <EmployeeTimeline employeeId={resolvedParams.id} />
+        </TabsContent>
+
         {/* Timeline */}
         <TabsContent value="timeline" className="mt-6">
-          <EmployeeTimeline employeeId={resolvedParams.id} />
+          <h1>Time Activities</h1>
         </TabsContent>
       </Tabs>
     </div>
