@@ -274,6 +274,166 @@ export const EmployeeSchema = z.object({
   references: ReferencesSchema,
 });
 
+
+
+// ----------------------
+// Concurrency Form Schemas
+// ----------------------
+
+// Personal Information Schema
+export const ConcurrencyPersonalInfoSchema = z.object({
+  full_name: z.string().min(1, "Full name is required"),
+  position: z.string().min(1, "Position is required"),
+  department: z.string().min(1, "Department is required"),
+  employee_id: z.string().min(1, "Employee ID is required"),
+  date_of_submission: z.string().optional(),
+});
+
+// Outside Employment/Business Interests Schema
+export const OutsideEmploymentSchema = z.object({
+  has_outside_employment: z.boolean().default(false),
+  employer_names: z.string().optional(),
+  nature_of_business: z.string().optional(),
+  hours_per_week: z.number().min(0, "Hours must be positive").max(168, "Hours cannot exceed 168 per week").optional(),
+  relationship_to_duties: z.string().optional(),
+}).refine(
+  (data) => !data.has_outside_employment ||
+    (data.has_outside_employment && data.employer_names && data.nature_of_business),
+  {
+    message: "Employer names and nature of business are required when declaring outside employment",
+    path: ["employer_names"],
+  }
+);
+
+// Conflict of Interest Schema
+export const ConflictOfInterestSchema = z.object({
+  has_conflict: z.boolean().default(false),
+  conflict_details: z.string().optional(),
+  mitigation_measures: z.string().optional(),
+}).refine(
+  (data) => !data.has_conflict ||
+    (data.has_conflict && data.conflict_details && data.mitigation_measures),
+  {
+    message: "Conflict details and mitigation measures are required when declaring a conflict of interest",
+    path: ["conflict_details"],
+  }
+);
+
+// Gifts and Benefits Schema
+export const GiftsBenefitsSchema = z.object({
+  received_gifts: z.boolean().default(false),
+  gift_details: z.string().optional(),
+  gift_value: z.number().min(0, "Gift value must be positive").optional(),
+  donor_relationship: z.enum(["vendor", "client", "colleague", "other", ""]).optional(),
+}).refine(
+  (data) => !data.received_gifts ||
+    (data.received_gifts && data.gift_details && data.gift_value !== undefined),
+  {
+    message: "Gift details and value are required when declaring gifts received",
+    path: ["gift_details"],
+  }
+);
+
+// Declaration Schema
+export const ConcurrencyDeclarationSchema = z.object({
+  is_truthful: z.boolean().refine((val) => val === true, {
+    message: "You must declare that the information provided is true and complete",
+  }),
+  agreed_to_terms: z.boolean().refine((val) => val === true, {
+    message: "You must agree to the terms and conditions",
+  }),
+  signature: z.string().min(1, "Signature is required"),
+  date_signed: z.string().optional(),
+});
+
+// ----------------------
+// Main Concurrency Form Schema
+// ----------------------
+export const ConcurrencyFormSchema = z.object({
+  employee_id: z.string().min(1, "Employee ID is required"),
+  form_type: z.enum(["concurrency_declaration", "conflict_of_interest", "annual_disclosure"]).default("concurrency_declaration"),
+  submission_date: z.string().optional(),
+  status: z.enum(["draft", "pending", "submitted", "under_review", "approved", "rejected", "requires_revision"]).default("draft"),
+
+  // Form Sections
+  personal_info: ConcurrencyPersonalInfoSchema,
+  outside_employment: OutsideEmploymentSchema,
+  conflict_of_interest: ConflictOfInterestSchema,
+  gifts_benefits: GiftsBenefitsSchema,
+  declaration: ConcurrencyDeclarationSchema,
+
+  // Review Information (for admin use)
+  review_info: z.object({
+    reviewed_by: z.string().optional(),
+    review_date: z.string().optional(),
+    reviewer_notes: z.string().optional(),
+    decision: z.enum(["approved", "rejected", "requires_revision"]).optional(),
+    decision_date: z.string().optional(),
+  }).optional(),
+
+  // Metadata
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  is_active: z.boolean().default(true),
+});
+
+// ----------------------
+// Concurrency Review Schema (for admin actions)
+// ----------------------
+export const ConcurrencyReviewSchema = z.object({
+  form_id: z.string().min(1, "Form ID is required"),
+  decision: z.enum(["approved", "rejected", "requires_revision"]),
+  reviewer_notes: z.string().optional(),
+});
+
+// ----------------------
+// Concurrency Filter Schema (for queries)
+// ----------------------
+export const ConcurrencyFilterSchema = z.object({
+  status: z.enum(["all", "draft", "pending", "submitted", "under_review", "approved", "rejected", "requires_revision"]).optional(),
+  employee_id: z.string().optional(),
+  department: z.string().optional(),
+  date_from: z.string().optional(),
+  date_to: z.string().optional(),
+  form_type: z.enum(["all", "concurrency_declaration", "conflict_of_interest", "annual_disclosure"]).optional(),
+});
+
+// ----------------------
+// Concurrency Stats Schema
+// ----------------------
+export const ConcurrencyStatsSchema = z.object({
+  total: z.number().min(0),
+  draft: z.number().min(0),
+  pending: z.number().min(0),
+  submitted: z.number().min(0),
+  under_review: z.number().min(0),
+  approved: z.number().min(0),
+  rejected: z.number().min(0),
+  requires_revision: z.number().min(0),
+});
+
+// ----------------------
+// Concurrency Bulk Action Schema
+// ----------------------
+export const ConcurrencyBulkActionSchema = z.object({
+  form_ids: z.array(z.string().min(1)).min(1, "At least one form ID is required"),
+  action: z.enum(["approve", "reject", "delete", "request_revision"]),
+  notes: z.string().optional(),
+});
+
+// ----------------------
+// Concurrency Settings Schema (for organization policies)
+// ----------------------
+export const ConcurrencySettingsSchema = z.object({
+  organization_name: z.string().min(1, "Organization name is required"),
+  gift_threshold: z.number().min(0, "Gift threshold must be positive").default(100),
+  requires_annual_disclosure: z.boolean().default(true),
+  disclosure_frequency: z.enum(["annual", "biannual", "quarterly", "on_hire"]).default("annual"),
+  approval_workflow: z.enum(["direct_supervisor", "hr_department", "ethics_committee", "combined"]).default("direct_supervisor"),
+  auto_reminder_days: z.number().min(0).max(365).default(30),
+  retention_period_years: z.number().min(1).max(30).default(7),
+});
+
 // ----------------------
 // Types
 // ----------------------
@@ -283,3 +443,18 @@ export type EducationEntryFormValues = z.infer<typeof EducationEntrySchema>;
 export type EmploymentEntryFormValues = z.infer<typeof EmploymentEntrySchema>;
 export type ReferenceEntryFormValues = z.infer<typeof ReferenceEntrySchema>;
 export type EmployeeFormValues = z.infer<typeof EmployeeSchema>;
+
+// ----------------------
+// Types
+// ----------------------
+export type ConcurrencyPersonalInfoFormValues = z.infer<typeof ConcurrencyPersonalInfoSchema>;
+export type OutsideEmploymentFormValues = z.infer<typeof OutsideEmploymentSchema>;
+export type ConflictOfInterestFormValues = z.infer<typeof ConflictOfInterestSchema>;
+export type GiftsBenefitsFormValues = z.infer<typeof GiftsBenefitsSchema>;
+export type ConcurrencyDeclarationFormValues = z.infer<typeof ConcurrencyDeclarationSchema>;
+export type ConcurrencyFormValues = z.infer<typeof ConcurrencyFormSchema>;
+export type ConcurrencyReviewFormValues = z.infer<typeof ConcurrencyReviewSchema>;
+export type ConcurrencyFilterFormValues = z.infer<typeof ConcurrencyFilterSchema>;
+export type ConcurrencyStatsValues = z.infer<typeof ConcurrencyStatsSchema>;
+export type ConcurrencyBulkActionValues = z.infer<typeof ConcurrencyBulkActionSchema>;
+export type ConcurrencySettingsValues = z.infer<typeof ConcurrencySettingsSchema>;

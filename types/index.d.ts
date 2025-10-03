@@ -120,3 +120,31 @@ export interface LeaveWithEmployee extends LeaveRequest {
   };
 }
 
+
+
+// Base response type for all server actions
+export interface BaseActionResponse {
+  success: boolean;
+  message: string;
+  error?: string;
+}
+
+export interface CreateConcurrencyResponse extends BaseActionResponse {
+  insertedId?: string;
+}
+
+export interface UpdateConcurrencyResponse extends BaseActionResponse {
+  modifiedCount?: number;
+}
+
+export interface SubmitConcurrencyResponse extends BaseActionResponse {
+  modifiedCount?: number;
+}
+
+export interface ConcurrencyFormState {
+  success: boolean;
+  message: string;
+  error?: string;
+  insertedId?: string;
+  modifiedCount?: number;
+}

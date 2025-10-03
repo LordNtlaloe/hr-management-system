@@ -12,6 +12,16 @@ import EmploymentHistoryCard from "@/components/dashboard/employees/EmploymentHi
 import ReferencesCard from "@/components/dashboard/employees/ReferencesCard";
 import EmployeeTimeline from "@/components/dashboard/employees/employee-timeline";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ConcurrencyForm from "@/components/dashboard/concurrency/concurrency-form";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Plus, FileText } from "lucide-react";
 
 interface EmployeeProfilePageProps {
   params: Promise<{ id: string }>;
@@ -36,6 +46,7 @@ export default function EmployeeProfilePage({
   const [resolvedParams, setResolvedParams] = useState<{ id: string } | null>(
     null
   );
+  const [isConcurrencyDialogOpen, setIsConcurrencyDialogOpen] = useState(false);
 
   // Resolve params and fetch employee data
   useEffect(() => {
@@ -72,6 +83,14 @@ export default function EmployeeProfilePage({
     }
   };
 
+  const handleOpenConcurrencyForm = () => {
+    setIsConcurrencyDialogOpen(true);
+  };
+
+  const handleCloseConcurrencyForm = () => {
+    setIsConcurrencyDialogOpen(false);
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -102,20 +121,46 @@ export default function EmployeeProfilePage({
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Employee Profile</h1>
         <div className="flex space-x-4">
-          <button
-            onClick={handleEditProfile}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          <Button
+            onClick={handleOpenConcurrencyForm}
+            className="flex items-center gap-2"
           >
+            <Plus className="h-4 w-4" />
+            Concurrency Form
+          </Button>
+          <Button onClick={handleEditProfile} variant="default">
             Edit Profile
-          </button>
-          <button
-            onClick={handleBackToList}
-            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-          >
+          </Button>
+          <Button onClick={handleBackToList} variant="outline">
             Back to List
-          </button>
+          </Button>
         </div>
       </div>
+
+      {/* Concurrency Form Dialog */}
+      <Dialog
+        open={isConcurrencyDialogOpen}
+        onOpenChange={setIsConcurrencyDialogOpen}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Concurrency Declaration Form
+            </DialogTitle>
+            <DialogDescription>
+              Complete the concurrency and conflict of interest declaration for{" "}
+              {employee_details?.surname} {employee_details?.other_names}
+            </DialogDescription>
+          </DialogHeader>
+          <ConcurrencyForm
+            employee={employeeData}
+            mode="create"
+            onSuccess={handleCloseConcurrencyForm}
+            onCancel={handleCloseConcurrencyForm}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Tabs */}
       <Tabs defaultValue="details" className="w-full">
@@ -147,6 +192,27 @@ export default function EmployeeProfilePage({
         {/* Employment Details */}
         <TabsContent value="employment" className="space-y-6 mt-6">
           <EmployeeTimeline employeeId={resolvedParams.id} />
+
+          {/* Concurrency Section in Employment Tab */}
+          <div className="bg-card rounded-lg border p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                Concurrency Declarations
+              </h3>
+              <Button
+                onClick={handleOpenConcurrencyForm}
+                size="sm"
+                className="flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New Declaration
+              </Button>
+            </div>
+            <p className="text-muted-foreground">
+              Manage conflict of interest and concurrency declarations for this
+              employee.
+            </p>
+          </div>
         </TabsContent>
 
         {/* Timeline */}
