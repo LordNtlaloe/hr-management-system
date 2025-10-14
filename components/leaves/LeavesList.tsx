@@ -8,6 +8,8 @@ interface LeaveListProps {
   processing: string | null;
   onApprove: (leaveId: string) => void;
   onReject: (leaveId: string) => void;
+  onMultiSectionApprove?: (leave: LeaveWithEmployee, section?: "partB" | "partC" | "partD") => void;
+
 }
 
 const LeaveList: React.FC<LeaveListProps> = ({

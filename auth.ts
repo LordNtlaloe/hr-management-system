@@ -13,14 +13,14 @@ declare module "next-auth" {
   interface User {
     first_name: string,
     last_name: string,
-    role?: "Employee" | "Admin"
+    role?: "Employee"  | "Admin" | "HR" | "Manager"
   }
 
   interface Session {
     user: {
       first_name: string,
       last_name: string,
-      role: "Employee" | "Admin"
+      role: "Employee"  | "Admin" | "HR" | "Manager"
     } & DefaultSession["user"]
   }
 }
@@ -28,7 +28,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     accessToken?: string
-    role?: "Employee" | "Admin"
+    role?: "Employee"  | "Admin" | "HR" | "Manager"
   }
 }
 

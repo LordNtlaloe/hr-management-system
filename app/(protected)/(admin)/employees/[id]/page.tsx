@@ -1,4 +1,3 @@
-// app/(protected)/(admin)/employees/[id]/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,8 +11,8 @@ import EmploymentHistoryCard from "@/components/dashboard/employees/EmploymentHi
 import ReferencesCard from "@/components/dashboard/employees/ReferencesCard";
 import EmployeeTimeline from "@/components/dashboard/employees/employee-timeline";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ConcurrencyForm from "@/components/dashboard/concurrency/concurrency-form";
 import { Button } from "@/components/ui/button";
+import ConcurrencyForm from "@/components/dashboard/employees/concurrence-form";
 import {
   Dialog,
   DialogContent,
@@ -72,7 +71,7 @@ export default function EmployeeProfilePage({
     resolveParams();
   }, [params]);
 
-  // Handle navigation
+  // Navigation handlers
   const handleBackToList = () => {
     router.push("/dashboard/employees");
   };
@@ -102,7 +101,7 @@ export default function EmployeeProfilePage({
     );
   }
 
-  // Error state or not found
+  // Error or not found
   if (error || !employeeData || !resolvedParams) {
     notFound();
   }
@@ -149,10 +148,12 @@ export default function EmployeeProfilePage({
               Concurrency Declaration Form
             </DialogTitle>
             <DialogDescription>
-              Complete the concurrency and conflict of interest declaration for{" "}
-              {employee_details?.surname} {employee_details?.other_names}
+              Complete the concurrence declaration for{" "}
+              {employee_details?.surname} {employee_details?.other_names}.
             </DialogDescription>
           </DialogHeader>
+
+          {/* FORM COMPONENT */}
           <ConcurrencyForm
             employee={employeeData}
             mode="create"
@@ -192,8 +193,6 @@ export default function EmployeeProfilePage({
         {/* Employment Details */}
         <TabsContent value="employment" className="space-y-6 mt-6">
           <EmployeeTimeline employeeId={resolvedParams.id} />
-
-          {/* Concurrency Section in Employment Tab */}
           <div className="bg-card rounded-lg border p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">
@@ -209,7 +208,7 @@ export default function EmployeeProfilePage({
               </Button>
             </div>
             <p className="text-muted-foreground">
-              Manage conflict of interest and concurrency declarations for this
+              Manage concurrence and conflict of interest declarations for this
               employee.
             </p>
           </div>

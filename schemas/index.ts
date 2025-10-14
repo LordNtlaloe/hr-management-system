@@ -24,21 +24,121 @@ export const NewPasswordSchema = z.object({
 });
 
 
-// 👤 Employee Schema
-
 // 📝 Leave Request Schema
-export const LeaveRequestSchema = z.object({
-  employeeId: z.string().min(1, "Employee ID is required"),
-  leaveType: z.enum(["sick", "vacation", "personal", "unpaid"]).default("vacation"),
+// Define individual section schemas first
+const PartASchema = z.object({
+  employeeName: z.string().min(1, "Employee name is required"),
+  employmentNumber: z.string().min(1, "Employment number is required"),
+  employeePosition: z.string().min(1, "Employee position is required"),
+  numberOfLeaveDays: z.number().min(0.5, "Number of leave days must be at least 0.5").max(365, "Number of leave days cannot exceed 365"),
   startDate: z.date(),
   endDate: z.date(),
-  reason: z.string().min(10, "Leave reason must be at least 10 characters").optional(),
-  status: z.enum(["pending", "approved", "rejected"]).default("pending"),
+  locationDuringLeave: z.string().min(1, "Location/address during leave is required"),
+  phoneNumber: z.string().min(1, "Phone number is required"),
+  dateOfRequest: z.date().default(() => new Date()),
+  employeeSignature: z.string().min(1, "Employee signature is required"),
 }).refine((data) => data.endDate >= data.startDate, {
   message: "End date cannot be before start date",
   path: ["endDate"],
 });
 
+const PartBSchema = z.object({
+  annualLeaveDays: z.number().min(0).max(365).default(21),
+  deductedDays: z.number().min(0).max(365).optional(),
+  remainingLeaveDays: z.number().min(0).max(365).optional(),
+  dateOfApproval: z.date().optional(),
+  hrSignature: z.string().optional(),
+});
+
+const PartCSchema = z.object({
+  supervisorComments: z.string().optional(),
+  recommendation: z.enum(["recommend-approval", "do-not-recommend"]).optional(),
+  dateOfReview: z.date().optional(),
+  supervisorSignature: z.string().optional(),
+});
+
+const PartDSchema = z.object({
+  finalDecision: z.enum(["approved", "rejected"]).optional(),
+  dateOfDecision: z.date().optional(),
+  approverSignature: z.string().optional(),
+});
+
+// Now create the main schema with refinements
+export const LeaveRequestFormSchema = z.object({
+  partA: PartASchema,
+  partB: PartBSchema,
+  partC: PartCSchema,
+  partD: PartDSchema,
+})
+.refine((data) => {
+  // Only validate if partB has deducted days and partA has numberOfLeaveDays
+  if (data.partB.deductedDays !== undefined && data.partA.numberOfLeaveDays !== undefined) {
+    return data.partB.deductedDays === data.partA.numberOfLeaveDays;
+  }
+  return true;
+}, {
+  message: "Deducted days in HR section must match number of leave days in employee section",
+  path: ["partB", "deductedDays"],
+})
+.refine((data) => {
+  // Validate remaining leave days calculation
+  if (data.partB.remainingLeaveDays !== undefined && 
+      data.partB.annualLeaveDays !== undefined && 
+      data.partB.deductedDays !== undefined) {
+    return data.partB.remainingLeaveDays === data.partB.annualLeaveDays - data.partB.deductedDays;
+  }
+  return true;
+}, {
+  message: "Remaining leave days calculation is incorrect",
+  path: ["partB", "remainingLeaveDays"],
+})
+.refine((data) => {
+  // Validate that partC review happens before partD decision if both exist
+  if (data.partC.dateOfReview && data.partD.dateOfDecision) {
+    return data.partC.dateOfReview <= data.partD.dateOfDecision;
+  }
+  return true;
+}, {
+  message: "Supervisor review date cannot be after final decision date",
+  path: ["partC", "dateOfReview"],
+});
+
+// Helper types
+export type LeaveRequestFormData = z.infer<typeof LeaveRequestFormSchema>;
+export type PartAData = z.infer<typeof PartASchema>;
+export type PartBData = z.infer<typeof PartBSchema>;
+export type PartCData = z.infer<typeof PartCSchema>;
+export type PartDData = z.infer<typeof PartDSchema>;
+
+// Status helper based on the form data
+export const getLeaveStatus = (data: LeaveRequestFormData): string => {
+  if (data.partD.finalDecision) {
+    return data.partD.finalDecision;
+  }
+  if (data.partC.recommendation) {
+    return 'under-review';
+  }
+  if (data.partA.employeeSignature) {
+    return 'submitted';
+  }
+  return 'draft';
+};
+
+// Helper to calculate remaining leave days
+export const calculateRemainingLeaveDays = (annualLeaveDays: number, deductedDays: number): number => {
+  return Math.max(0, annualLeaveDays - deductedDays);
+};
+
+// Helper to auto-calculate remaining days when deducted days change
+export const updateRemainingLeaveDays = (partBData: PartBData): PartBData => {
+  if (partBData.deductedDays !== undefined && partBData.annualLeaveDays !== undefined) {
+    return {
+      ...partBData,
+      remainingLeaveDays: calculateRemainingLeaveDays(partBData.annualLeaveDays, partBData.deductedDays)
+    };
+  }
+  return partBData;
+};
 
 // 🕒 Attendance Schema
 export const AttendanceSchema = z.object({

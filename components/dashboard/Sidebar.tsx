@@ -26,13 +26,13 @@ type NavItem = {
   name: string;
   icon?: React.ReactNode;
   path?: string;
-  roles?: ("Employee" | "Admin")[];
+  roles?: ("Employee" | "Admin" | "HR" | "Manager")[];
   subItems?: {
     name: string;
     path: string;
     pro?: boolean;
     new?: boolean;
-    roles?: ("Employee" | "Admin")[];
+    roles?: ("Employee" | "Admin" | "HR" | "Manager")[];
   }[];
 };
 
@@ -173,7 +173,10 @@ const employeeOthersItems: NavItem[] = [
 ];
 
 // ---- FILTER BY ROLE ---- //
-const filterNavItemsByRole = (items: NavItem[], role?: "Employee" | "Admin") =>
+const filterNavItemsByRole = (
+  items: NavItem[],
+  role?: "Employee" | "Admin" | "HR" | "Manager"
+) =>
   items
     .filter((item) => !item.roles || item.roles.includes(role!))
     .map((item) => ({

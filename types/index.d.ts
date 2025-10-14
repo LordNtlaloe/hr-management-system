@@ -90,6 +90,7 @@ export type EmployeeWithUser = Employee & {
 }
 
 export interface LeaveRequest {
+  formData: undefined
   _id: string
   employeeId: Employee
   leaveType: string
@@ -111,6 +112,7 @@ export interface LeaveRequest {
 
 
 export interface LeaveWithEmployee extends LeaveRequest {
+  formData: any
   employeeDetails: {
     name: string;
     email: string;
