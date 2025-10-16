@@ -167,7 +167,7 @@ export default function EmployeeProfilePage({
       <Tabs defaultValue="details" className="w-full">
         <TabsList>
           <TabsTrigger value="details">Employee Details</TabsTrigger>
-          <TabsTrigger value="employment">Employment Details</TabsTrigger>
+          <TabsTrigger value="employment">Employee Activities</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
         </TabsList>
 

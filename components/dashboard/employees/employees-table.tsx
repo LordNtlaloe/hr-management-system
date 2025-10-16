@@ -109,7 +109,7 @@ export default function EmployeesTable() {
           onClick={() => router.push("/employees/create")}
         >
           <PlusCircle className="h-4 w-4 mr-2" />
-          Add Employee
+          Add Employee(GP103)
         </Button>
         {!isEmpty && (
           <DropdownMenu>

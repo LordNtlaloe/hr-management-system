@@ -70,38 +70,38 @@ export const LeaveRequestFormSchema = z.object({
   partC: PartCSchema,
   partD: PartDSchema,
 })
-.refine((data) => {
-  // Only validate if partB has deducted days and partA has numberOfLeaveDays
-  if (data.partB.deductedDays !== undefined && data.partA.numberOfLeaveDays !== undefined) {
-    return data.partB.deductedDays === data.partA.numberOfLeaveDays;
-  }
-  return true;
-}, {
-  message: "Deducted days in HR section must match number of leave days in employee section",
-  path: ["partB", "deductedDays"],
-})
-.refine((data) => {
-  // Validate remaining leave days calculation
-  if (data.partB.remainingLeaveDays !== undefined && 
-      data.partB.annualLeaveDays !== undefined && 
+  .refine((data) => {
+    // Only validate if partB has deducted days and partA has numberOfLeaveDays
+    if (data.partB.deductedDays !== undefined && data.partA.numberOfLeaveDays !== undefined) {
+      return data.partB.deductedDays === data.partA.numberOfLeaveDays;
+    }
+    return true;
+  }, {
+    message: "Deducted days in HR section must match number of leave days in employee section",
+    path: ["partB", "deductedDays"],
+  })
+  .refine((data) => {
+    // Validate remaining leave days calculation
+    if (data.partB.remainingLeaveDays !== undefined &&
+      data.partB.annualLeaveDays !== undefined &&
       data.partB.deductedDays !== undefined) {
-    return data.partB.remainingLeaveDays === data.partB.annualLeaveDays - data.partB.deductedDays;
-  }
-  return true;
-}, {
-  message: "Remaining leave days calculation is incorrect",
-  path: ["partB", "remainingLeaveDays"],
-})
-.refine((data) => {
-  // Validate that partC review happens before partD decision if both exist
-  if (data.partC.dateOfReview && data.partD.dateOfDecision) {
-    return data.partC.dateOfReview <= data.partD.dateOfDecision;
-  }
-  return true;
-}, {
-  message: "Supervisor review date cannot be after final decision date",
-  path: ["partC", "dateOfReview"],
-});
+      return data.partB.remainingLeaveDays === data.partB.annualLeaveDays - data.partB.deductedDays;
+    }
+    return true;
+  }, {
+    message: "Remaining leave days calculation is incorrect",
+    path: ["partB", "remainingLeaveDays"],
+  })
+  .refine((data) => {
+    // Validate that partC review happens before partD decision if both exist
+    if (data.partC.dateOfReview && data.partD.dateOfDecision) {
+      return data.partC.dateOfReview <= data.partD.dateOfDecision;
+    }
+    return true;
+  }, {
+    message: "Supervisor review date cannot be after final decision date",
+    path: ["partC", "dateOfReview"],
+  });
 
 // Helper types
 export type LeaveRequestFormData = z.infer<typeof LeaveRequestFormSchema>;
@@ -233,34 +233,60 @@ export const TerminationSchema = z.object({
 });
 
 
+// =============================================================================
+// EMPLOYEE APPLICATION FORM SCHEMAS (Numbered according to document images)
+// =============================================================================
+
 // ----------------------
-// Employee Details Schema
+// Section 1-14: Personal Details Schema
 // ----------------------
 export const EmployeeDetailsSchema = z.object({
+  // Section 1
   surname: z.string().min(1, "Surname is required"),
+  // Section 2
   other_names: z.string().min(1, "Other names are required"),
+  // Section 3
   current_address: z.string().min(1, "Current address is required"),
+  // Section 4
   date_of_birth: z.string().min(1, "Date of birth is required"),
-  profile_picture: z.string().optional(),
+  // Section 5
   age: z.number().min(0, "Age must be positive"),
+  // Section 6
   gender: z.enum(["male", "female"]),
+  // Section 7
   place_of_birth: z.string().min(1, "Place of birth is required"),
-
+  // Section 8
   is_citizen: z.boolean(),
+
+  // Sections 9-11: Citizen Information (conditional)
   citizen_info: z
     .object({
+      // Section 9
       chief_name: z.string().min(1, "Chief's name is required"),
+      // Section 10
       district: z.string().min(1, "District is required"),
+      // Section 11
       tax_id: z.string().min(1, "Tax Identity Number is required"),
     })
     .optional(),
+
+  // Sections 9-11: Non-Citizen Information (conditional)
   non_citizen_info: z
     .object({
+      // Section 9
       certificate_number: z.string().min(1, "Certificate number is required"),
+      // Section 10
       date_of_issue: z.string().min(1, "Date of issue is required"),
+      // Section 11
       present_nationality: z.string().min(1, "Present nationality is required"),
     })
     .optional(),
+
+  // Additional personal details (Sections 12-14)
+  telephone: z.string().optional(),
+  email: z.string().email().optional(),
+  emergency_contact: z.string().optional(),
+  profile_picture: z.string().optional(),
 }).refine(
   (data) =>
     (data.is_citizen && data.citizen_info) ||
@@ -272,7 +298,7 @@ export const EmployeeDetailsSchema = z.object({
 );
 
 // ----------------------
-// Legal Information Schema
+// Legal Information Schema (Sections would be numbered based on full form)
 // ----------------------
 export const LegalInfoSchema = z.object({
   father_name: z.string().min(1, "Father's name is required"),
@@ -320,12 +346,15 @@ export const LegalInfoSchema = z.object({
 );
 
 // ----------------------
-// Education History Schema
+// Section 15: Education History Schema - SCHOOLS ATTENDED
 // ----------------------
 export const EducationEntrySchema = z.object({
+  // Section 15 fields
   school_name: z.string().min(1, "School name is required"),
   date_of_entry: z.string().min(1, "Date of entry is required"),
   date_of_leaving: z.string().min(1, "Date of leaving is required"),
+
+  // Additional education details
   qualification: z.string().min(1, "Qualification is required"),
   qualification_start_date: z.string().min(1, "Start date is required"),
   qualification_completion_date: z.string().min(1, "Completion date is required"),
@@ -335,24 +364,59 @@ export const EducationEntrySchema = z.object({
 export const EducationHistorySchema = z.array(EducationEntrySchema);
 
 // ----------------------
-// Employment History Schema
+// Section 16: EXAMINATIONS PASSED Schema
+// ----------------------
+export const ExaminationsSchema = z.object({
+  junior_certificate: z.string().optional(),
+  junior_certificate_date: z.string().optional(),
+  subjects_passed: z.string().optional(),
+});
+
+// ----------------------
+// Section 17: UNIVERSITY/POST SECONDARY Schema
+// ----------------------
+export const PostSecondarySchema = z.object({
+  institution_name: z.string().optional(),
+  date_of_entry: z.string().optional(),
+  date_of_leaving: z.string().optional(),
+  qualifications_obtained: z.string().optional(),
+});
+
+// ----------------------
+// Section 18: ADDITIONAL QUALIFICATIONS Schema
+// ----------------------
+export const AdditionalQualificationsSchema = z.object({
+  qualifications: z.string().optional(),
+});
+
+// ----------------------
+// Employment History Schema (Sections 19-29)
 // ----------------------
 export const EmploymentEntrySchema = z.object({
+  // Section 19
   employer_name: z.string().min(1, "Employer name is required"),
+  // Section 20
   employer_address: z.string().min(1, "Employer address is required"),
+  // Section 21
   position: z.string().min(1, "Position is required"),
-  duties: z.string().min(1, "Duties and responsibilities are required"),
-  employment_start: z.string().min(1, "Start date is required"),
-  employment_end: z.string().min(1, "End date is required"),
+  // Section 22
   salary: z.number().min(0, "Salary must be a positive number"),
+  // Section 23
+  employment_start: z.string().min(1, "Start date is required"),
+  // Section 24
+  employment_end: z.string().min(1, "End date is required"),
+  // Section 25
+  duties: z.string().min(1, "Duties and responsibilities are required"),
+  // Section 26
   reason_for_leaving: z.string().optional(),
+  // Section 27
   notice_period: z.string().optional(),
 });
 
 export const EmploymentHistorySchema = z.array(EmploymentEntrySchema);
 
 // ----------------------
-// References Schema
+// Section 30: REFERENCES Schema
 // ----------------------
 export const ReferenceEntrySchema = z.object({
   name: z.string().min(1, "Reference name is required"),
@@ -361,20 +425,35 @@ export const ReferenceEntrySchema = z.object({
   known_duration: z.string().min(1, "Duration of acquaintance is required"),
 });
 
-export const ReferencesSchema = z.array(ReferenceEntrySchema);
+export const ReferencesSchema = z.array(ReferenceEntrySchema).min(2, "At least two references are required").max(2, "Maximum two references allowed");
 
 // ----------------------
-// Combined Schema
+// Combined Employee Application Form Schema
 // ----------------------
 export const EmployeeSchema = z.object({
+  // Sections 1-14
   employee_details: EmployeeDetailsSchema,
+
+  // Legal Information (sections would be numbered based on full form)
   legal_info: LegalInfoSchema,
-  education_history: EducationHistorySchema,
-  employment_history: EmploymentHistorySchema,
+
+  // Sections 15-18: Education
+  education_history: EducationHistorySchema.min(1, "At least one education entry is required"),
+  examinations: ExaminationsSchema.optional(),
+  post_secondary: PostSecondarySchema.optional(),
+  additional_qualifications: AdditionalQualificationsSchema.optional(),
+
+  // Sections 19-29: Employment
+  employment_history: EmploymentHistorySchema.min(1, "At least one employment entry is required"),
+
+  // Section 30: References
   references: ReferencesSchema,
 });
 
 
+// =============================================================================
+// CONCURRENCY FORM SCHEMAS
+// =============================================================================
 
 // ----------------------
 // Concurrency Form Schemas
@@ -534,19 +613,22 @@ export const ConcurrencySettingsSchema = z.object({
   retention_period_years: z.number().min(1).max(30).default(7),
 });
 
-// ----------------------
-// Types
-// ----------------------
+// =============================================================================
+// TYPE EXPORTS
+// =============================================================================
+
+// Employee Application Form Types
 export type EmployeeDetailsFormValues = z.infer<typeof EmployeeDetailsSchema>;
 export type LegalInfoFormValues = z.infer<typeof LegalInfoSchema>;
 export type EducationEntryFormValues = z.infer<typeof EducationEntrySchema>;
 export type EmploymentEntryFormValues = z.infer<typeof EmploymentEntrySchema>;
 export type ReferenceEntryFormValues = z.infer<typeof ReferenceEntrySchema>;
+export type ExaminationsFormValues = z.infer<typeof ExaminationsSchema>;
+export type PostSecondaryFormValues = z.infer<typeof PostSecondarySchema>;
+export type AdditionalQualificationsFormValues = z.infer<typeof AdditionalQualificationsSchema>;
 export type EmployeeFormValues = z.infer<typeof EmployeeSchema>;
 
-// ----------------------
-// Types
-// ----------------------
+// Concurrency Form Types
 export type ConcurrencyPersonalInfoFormValues = z.infer<typeof ConcurrencyPersonalInfoSchema>;
 export type OutsideEmploymentFormValues = z.infer<typeof OutsideEmploymentSchema>;
 export type ConflictOfInterestFormValues = z.infer<typeof ConflictOfInterestSchema>;
