@@ -9,8 +9,9 @@ import {
 import { getEmployeeLeaveRequests } from "@/actions/leaves.actions";
 import { getEmployeeById } from "@/actions/employee.actions";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectTrigger,
@@ -29,13 +30,16 @@ import {
 import { Modal } from "@/components/ui/modal";
 import { useModal } from "@/hooks/use-modal";
 import ConcurrencyForm from "@/components/dashboard/employees/concurrence-form";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, AlertCircle, CalendarDays, User, CheckCircle, XCircle, Clock } from "lucide-react";
+import { PartASchema, PartBSchema, type PartAData, type PartBData } from "@/schemas";
 
 interface Activity {
   _id: string;
   type: string;
   description: string;
   date: string;
+  partBData?: PartBData;
+  status?: "pending" | "approved" | "rejected";
 }
 
 interface LeaveRequest {
@@ -49,20 +53,14 @@ interface LeaveRequest {
   employeeId?: any;
 }
 
-// Types for the leave form
-interface LeaveFormData {
-  employeeName: string;
-  employmentNumber: string;
-  employeePosition: string;
-  numberOfLeaveDays: number;
-  startDate: string;
-  endDate: string;
-  locationDuringLeave: string;
-  phoneNumber: string;
-  dateOfRequest: string;
-  employeeSignature: string;
-  leaveType: string;
-  reason?: string;
+interface EmployeeData {
+  _id: string;
+  first_name: string;
+  last_name: string;
+  employment_number?: string;
+  position?: string;
+  phone?: string;
+  email?: string;
 }
 
 export default function EmployeeTimeline({
@@ -73,14 +71,20 @@ export default function EmployeeTimeline({
   const [activities, setActivities] = useState<Activity[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [type, setType] = useState("");
-  const [employeeData, setEmployeeData] = useState<any>(null);
+  const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  // Modals for different forms
+  // Modals
   const { isOpen: isLeaveModalOpen, openModal: openLeaveModal, closeModal: closeLeaveModal } = useModal();
   const { isOpen: isConcurrencyModalOpen, openModal: openConcurrencyModal, closeModal: closeConcurrencyModal } = useModal();
+  
+  // Part B Dialog state
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [isPartBDialogOpen, setIsPartBDialogOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
 
-  // Leave Form State - Initialize with empty values, will be populated when employee data loads
-  const [leaveForm, setLeaveForm] = useState<LeaveFormData>({
+  // Leave Form state
+  const [leaveForm, setLeaveForm] = useState({
     employeeName: "",
     employmentNumber: "",
     employeePosition: "",
@@ -91,11 +95,49 @@ export default function EmployeeTimeline({
     phoneNumber: "",
     dateOfRequest: new Date().toISOString().split('T')[0],
     employeeSignature: "",
-    leaveType: "annual",
-    reason: "",
   });
 
+  // Part B Form state
+  const [partBForm, setPartBForm] = useState<PartBData>({
+    annualLeaveDays: 21,
+    deductedDays: 0,
+    remainingLeaveDays: 21,
+    dateOfApproval: undefined,
+    hrSignature: "",
+  });
+
+  const [leaveType, setLeaveType] = useState<"annual" | "sick" | "personal" | "unpaid">("annual");
+  const [reason, setReason] = useState("");
   const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
+
+  // Initialize leave form with employee data
+  const initializeLeaveFormWithEmployeeData = (employee: EmployeeData) => {
+    const employeeName = `${employee.first_name} ${employee.last_name}`.trim();
+    const employmentNumber = employee.employment_number || "";
+    const employeePosition = employee.position || "";
+    const phoneNumber = employee.phone || "";
+
+    setLeaveForm(prev => ({
+      ...prev,
+      employeeName,
+      employmentNumber,
+      employeePosition,
+      phoneNumber,
+    }));
+  };
+
+  // Load data
+  async function loadEmployeeData() {
+    try {
+      const employee = await getEmployeeById(employeeId);
+      if (employee) {
+        setEmployeeData(employee);
+        initializeLeaveFormWithEmployeeData(employee);
+      }
+    } catch (error) {
+      console.error("Failed to load employee data:", error);
+    }
+  }
 
   async function loadActivities() {
     const data = await getEmployeeActivities(employeeId);
@@ -116,46 +158,21 @@ export default function EmployeeTimeline({
     }
   }
 
-  async function loadEmployeeData() {
-    try {
-      const employee = await getEmployeeById(employeeId);
-      if (employee) {
-        setEmployeeData(employee);
-
-        // Pre-fill employee details in leave form
-        const employeeName = `${employee.first_name} ${employee.last_name}`.trim();
-        const employmentNumber = employee.employment_number || "";
-        const employeePosition = employee.position || "";
-        const phoneNumber = employee.phone || "";
-
-        setLeaveForm(prev => ({
-          ...prev,
-          employeeName,
-          employmentNumber,
-          employeePosition,
-          phoneNumber,
-        }));
-      }
-    } catch (error) {
-      console.error("Failed to load employee data:", error);
-    }
-  }
-
   useEffect(() => {
     loadActivities();
     loadLeaveRequests();
     loadEmployeeData();
   }, [employeeId]);
 
-  // Handle activity type change - open appropriate modal
+  // Handle activity type change
   const handleTypeChange = async (value: string) => {
     setType(value);
     if (value === "leave") {
       await loadLeaveRequests();
-      await loadEmployeeData(); // Ensure latest employee data is loaded
+      await loadEmployeeData();
       openLeaveModal();
     } else if (value === "concurrency") {
-      await loadEmployeeData(); // Ensure latest employee data is loaded
+      await loadEmployeeData();
       openConcurrencyModal();
     }
   };
@@ -165,18 +182,133 @@ export default function EmployeeTimeline({
     await loadActivities();
   }
 
-  // Handle Leave Form changes
-  const handleLeaveFormChange = (field: string, value: any) => {
-    setLeaveForm(prev => ({ ...prev, [field]: value }));
+  // Part B Functions
+  const handleViewPartB = (activity: Activity) => {
+    setSelectedActivity(activity);
+    if (activity.partBData) {
+      setPartBForm(activity.partBData);
+    }
+    setIsEditMode(false);
+    setIsPartBDialogOpen(true);
+  };
 
-    // Recalculate days if dates change
-    if ((field === "startDate" || field === "endDate") && leaveForm.startDate && leaveForm.endDate) {
-      const numberOfDays = calculateDaysDifference(new Date(leaveForm.startDate), new Date(leaveForm.endDate));
-      setLeaveForm(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
+  const handleEditPartB = (activity: Activity) => {
+    setSelectedActivity(activity);
+    if (activity.partBData) {
+      setPartBForm(activity.partBData);
+    } else {
+      const extractedDays = extractDaysFromDescription(activity.description);
+      setPartBForm({
+        annualLeaveDays: 21,
+        deductedDays: extractedDays,
+        remainingLeaveDays: 21 - extractedDays,
+        dateOfApproval: new Date(),
+        hrSignature: "",
+      });
+    }
+    setIsEditMode(true);
+    setIsPartBDialogOpen(true);
+  };
+
+  const extractDaysFromDescription = (description: string): number => {
+    const match = description.match(/(\d+)\s+days/);
+    return match ? parseInt(match[1]) : 0;
+  };
+
+  const handlePartBFormChange = (field: keyof PartBData, value: any) => {
+    setPartBForm(prev => {
+      const updated = { ...prev, [field]: value };
+      
+      if (field === "deductedDays" || field === "annualLeaveDays") {
+        const annual = field === "annualLeaveDays" ? value : prev.annualLeaveDays || 21;
+        const deducted = field === "deductedDays" ? value : prev.deductedDays || 0;
+        updated.remainingLeaveDays = annual - deducted;
+      }
+      
+      return updated;
+    });
+  };
+
+  const handleSavePartB = async () => {
+    try {
+      PartBSchema.parse(partBForm);
+      
+      // Save Part B data - you'll need to implement this API call
+      // await updateLeaveActivityPartB(selectedActivity._id, partBForm);
+      
+      console.log("Saving Part B data:", partBForm);
+      
+      // Update local state
+      setActivities(prev => 
+        prev.map(act => 
+          act._id === selectedActivity?._id 
+            ? { ...act, partBData: partBForm, status: "approved" }
+            : act
+        )
+      );
+      
+      setIsPartBDialogOpen(false);
+      setIsEditMode(false);
+    } catch (error) {
+      console.error("Failed to save Part B:", error);
+      alert("Failed to save Part B data");
     }
   };
 
-  // Pre-fill leave form with selected leave request
+  // Leave Form Functions
+  const validateLeaveForm = (): boolean => {
+    try {
+      const formData: PartAData = {
+        employeeName: leaveForm.employeeName,
+        employmentNumber: leaveForm.employmentNumber,
+        employeePosition: leaveForm.employeePosition,
+        numberOfLeaveDays: leaveForm.numberOfLeaveDays,
+        startDate: new Date(leaveForm.startDate),
+        endDate: new Date(leaveForm.endDate),
+        locationDuringLeave: leaveForm.locationDuringLeave,
+        phoneNumber: leaveForm.phoneNumber,
+        dateOfRequest: new Date(leaveForm.dateOfRequest),
+        employeeSignature: leaveForm.employeeSignature,
+      };
+
+      PartASchema.parse(formData);
+      setValidationErrors({});
+      return true;
+    } catch (error: any) {
+      const errors: Record<string, string> = {};
+      if (error.errors) {
+        error.errors.forEach((err: any) => {
+          const path = err.path.join('.');
+          errors[path] = err.message;
+        });
+      }
+      setValidationErrors(errors);
+      return false;
+    }
+  };
+
+  const handleLeaveFormChange = (field: string, value: any) => {
+    setLeaveForm(prev => ({ ...prev, [field]: value }));
+    
+    if (validationErrors[field]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+
+    if (field === "startDate" || field === "endDate") {
+      const startDate = field === "startDate" ? value : leaveForm.startDate;
+      const endDate = field === "endDate" ? value : leaveForm.endDate;
+      
+      if (startDate && endDate) {
+        const numberOfDays = calculateDaysDifference(new Date(startDate), new Date(endDate));
+        setLeaveForm(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
+      }
+    }
+  };
+
   const handleSelectLeaveRequest = (request: LeaveRequest) => {
     setSelectedLeaveRequest(request);
     setLeaveForm(prev => ({
@@ -184,26 +316,23 @@ export default function EmployeeTimeline({
       startDate: new Date(request.startDate).toISOString().split('T')[0],
       endDate: new Date(request.endDate).toISOString().split('T')[0],
       numberOfLeaveDays: request.days,
-      leaveType: request.leaveType,
-      reason: request.reason || "",
-      locationDuringLeave: request.reason || "",
     }));
+    setLeaveType(request.leaveType as any);
+    setReason(request.reason || "");
   };
 
   const calculateDaysDifference = (start: Date, end: Date) => {
     const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
-  // Submit the leave form and create activity
   const handleLeaveFormSubmit = async () => {
-    if (!leaveForm.employeeName || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.employeeSignature) {
-      alert("Please fill in all required fields");
+    if (!validateLeaveForm()) {
       return;
     }
 
     try {
-      const leaveDescription = `Leave Request: ${leaveForm.leaveType} - ${leaveForm.numberOfLeaveDays} days from ${leaveForm.startDate} to ${leaveForm.endDate}. Location: ${leaveForm.locationDuringLeave}`;
+      const leaveDescription = `Leave Request: ${leaveType} - ${leaveForm.numberOfLeaveDays} days from ${leaveForm.startDate} to ${leaveForm.endDate}. Location: ${leaveForm.locationDuringLeave}${reason ? `. Reason: ${reason}` : ''}`;
 
       const finalDescription = selectedLeaveRequest
         ? `${leaveDescription} (Based on Leave Request: ${selectedLeaveRequest._id})`
@@ -216,31 +345,16 @@ export default function EmployeeTimeline({
       });
 
       if ("success" in result) {
-        // Reset form but keep employee data
-        setLeaveForm(prev => ({
-          ...prev,
-          numberOfLeaveDays: 0,
-          startDate: "",
-          endDate: "",
-          locationDuringLeave: "",
-          dateOfRequest: new Date().toISOString().split('T')[0],
-          employeeSignature: "",
-          leaveType: "annual",
-          reason: "",
-        }));
-        setSelectedLeaveRequest(null);
-        setType("");
-        closeLeaveModal();
+        handleLeaveModalClose();
         await loadActivities();
       }
     } catch (error) {
       console.error("Failed to submit leave request:", error);
+      alert("Failed to submit leave request. Please try again.");
     }
   };
 
-  // Handle concurrency form success
   const handleConcurrencySuccess = () => {
-    // Create activity record for concurrency declaration
     addEmployeeActivity({
       employeeId,
       type: "concurrency",
@@ -253,36 +367,55 @@ export default function EmployeeTimeline({
     closeConcurrencyModal();
   };
 
-  // Reset leave form when modal closes (but keep employee data)
   const handleLeaveModalClose = () => {
     if (employeeData) {
-      const employeeName = `${employeeData.first_name} ${employeeData.last_name}`.trim();
-      const employmentNumber = employeeData.employment_number || "";
-      const employeePosition = employeeData.position || "";
-      const phoneNumber = employeeData.phone || "";
-
-      setLeaveForm(prev => ({
-        ...prev,
-        employeeName,
-        employmentNumber,
-        employeePosition,
-        phoneNumber,
-        numberOfLeaveDays: 0,
-        startDate: "",
-        endDate: "",
-        locationDuringLeave: "",
-        dateOfRequest: new Date().toISOString().split('T')[0],
-        employeeSignature: "",
-        leaveType: "annual",
-        reason: "",
-      }));
+      initializeLeaveFormWithEmployeeData(employeeData);
     }
+    
+    setLeaveForm(prev => ({
+      ...prev,
+      numberOfLeaveDays: 0,
+      startDate: "",
+      endDate: "",
+      locationDuringLeave: "",
+      dateOfRequest: new Date().toISOString().split('T')[0],
+      employeeSignature: "",
+    }));
+    
+    setLeaveType("annual");
+    setReason("");
     setSelectedLeaveRequest(null);
+    setValidationErrors({});
     setType("");
     closeLeaveModal();
   };
 
-  // Render Leave Request Selection
+  // UI Helper Functions
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case "approved":
+        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="h-3 w-3 mr-1" />Approved</Badge>;
+      case "rejected":
+        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100"><XCircle className="h-3 w-3 mr-1" />Rejected</Badge>;
+      case "pending":
+      default:
+        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+    }
+  };
+
+  const renderError = (field: string) => {
+    if (validationErrors[field]) {
+      return (
+        <div className="flex items-center gap-1 mt-1 text-red-600 text-xs">
+          <AlertCircle className="h-3 w-3" />
+          <span>{validationErrors[field]}</span>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Render Components
   const renderLeaveRequestSelection = () => (
     <div className="space-y-4 mb-6">
       <h4 className="font-medium text-gray-700">Select from Existing Leave Requests</h4>
@@ -338,12 +471,138 @@ export default function EmployeeTimeline({
     </div>
   );
 
-  // Render Leave Form
+  const renderPartBView = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">Part B - HR Section</h3>
+      
+      <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+        <div>
+          <label className="text-sm font-medium text-gray-600">Annual Leave Days</label>
+          <p className="text-lg font-semibold">{partBForm.annualLeaveDays}</p>
+        </div>
+        
+        <div>
+          <label className="text-sm font-medium text-gray-600">Deducted Days</label>
+          <p className="text-lg font-semibold text-red-600">{partBForm.deductedDays}</p>
+        </div>
+        
+        <div>
+          <label className="text-sm font-medium text-gray-600">Remaining Leave Days</label>
+          <p className="text-lg font-semibold text-green-600">{partBForm.remainingLeaveDays}</p>
+        </div>
+        
+        <div>
+          <label className="text-sm font-medium text-gray-600">Date of Approval</label>
+          <p className="text-lg font-semibold">
+            {partBForm.dateOfApproval 
+              ? new Date(partBForm.dateOfApproval).toLocaleDateString() 
+              : "Not set"}
+          </p>
+        </div>
+        
+        <div className="col-span-2">
+          <label className="text-sm font-medium text-gray-600">HR Signature</label>
+          <p className="text-lg font-semibold">{partBForm.hrSignature || "Not signed"}</p>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <Button variant="outline" onClick={() => setIsPartBDialogOpen(false)}>Close</Button>
+        <Button onClick={() => setIsEditMode(true)}>Edit</Button>
+      </div>
+    </div>
+  );
+
+  const renderPartBEdit = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">Part B - HR Section (Edit)</h3>
+      
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Annual Leave Days *
+          </label>
+          <input
+            type="number"
+            value={partBForm.annualLeaveDays}
+            onChange={(e) => handlePartBFormChange("annualLeaveDays", parseInt(e.target.value))}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+            min="0"
+            max="365"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Deducted Days *
+          </label>
+          <input
+            type="number"
+            value={partBForm.deductedDays}
+            onChange={(e) => handlePartBFormChange("deductedDays", parseInt(e.target.value))}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+            min="0"
+            max="365"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Remaining Leave Days
+          </label>
+          <input
+            type="number"
+            value={partBForm.remainingLeaveDays}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm"
+            disabled
+          />
+          <p className="text-xs text-gray-500 mt-1">Auto-calculated</p>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Date of Approval
+          </label>
+          <input
+            type="date"
+            value={partBForm.dateOfApproval ? new Date(partBForm.dateOfApproval).toISOString().split('T')[0] : ""}
+            onChange={(e) => handlePartBFormChange("dateOfApproval", e.target.value ? new Date(e.target.value) : undefined)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+          />
+        </div>
+
+        <div className="col-span-2">
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            HR Signature
+          </label>
+          <input
+            type="text"
+            value={partBForm.hrSignature}
+            onChange={(e) => handlePartBFormChange("hrSignature", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+            placeholder="Enter HR signature"
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <Button variant="outline" onClick={() => {
+          setIsEditMode(false);
+          if (selectedActivity?.partBData) {
+            setPartBForm(selectedActivity.partBData);
+          }
+        }}>Cancel</Button>
+        <Button onClick={handleSavePartB}>Save Part B</Button>
+      </div>
+    </div>
+  );
+
   const renderLeaveForm = () => (
     <div className="space-y-4 max-h-[80vh] overflow-y-auto p-2">
-      <h3 className="text-lg font-semibold text-gray-800">Leave Request Form</h3>
+      <h3 className="text-lg font-semibold text-gray-800">Leave Request Form (Part A)</h3>
       <p className="text-sm text-gray-600">
         Employee: {employeeData ? `${employeeData.first_name} ${employeeData.last_name}` : 'Loading...'}
+        {employeeData?.employment_number && ` (${employeeData.employment_number})`}
       </p>
 
       {renderLeaveRequestSelection()}
@@ -357,9 +616,11 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employeeName}
             onChange={(e) => handleLeaveFormChange("employeeName", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.employeeName ? 'border-red-500' : 'border-gray-300'} bg-gray-50 px-4 py-2.5 text-sm text-gray-800`}
             required
+            readOnly
           />
+          {renderError("employeeName")}
         </div>
 
         <div>
@@ -370,9 +631,11 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employmentNumber}
             onChange={(e) => handleLeaveFormChange("employmentNumber", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.employmentNumber ? 'border-red-500' : 'border-gray-300'} bg-gray-50 px-4 py-2.5 text-sm text-gray-800`}
             required
+            readOnly
           />
+          {renderError("employmentNumber")}
         </div>
 
         <div>
@@ -383,9 +646,11 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employeePosition}
             onChange={(e) => handleLeaveFormChange("employeePosition", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.employeePosition ? 'border-red-500' : 'border-gray-300'} bg-gray-50 px-4 py-2.5 text-sm text-gray-800`}
             required
+            readOnly
           />
+          {renderError("employeePosition")}
         </div>
 
         <div>
@@ -393,8 +658,8 @@ export default function EmployeeTimeline({
             Leave Type
           </label>
           <select
-            value={leaveForm.leaveType}
-            onChange={(e) => handleLeaveFormChange("leaveType", e.target.value)}
+            value={leaveType}
+            onChange={(e) => setLeaveType(e.target.value as any)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
           >
             <option value="annual">Annual Leave</option>
@@ -406,14 +671,15 @@ export default function EmployeeTimeline({
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Number of Leave Days
+            Number of Leave Days *
           </label>
           <input
             type="number"
             value={leaveForm.numberOfLeaveDays}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.numberOfLeaveDays ? 'border-red-500' : 'border-gray-300'} bg-gray-100 px-4 py-2.5 text-sm text-gray-800`}
             disabled
           />
+          {renderError("numberOfLeaveDays")}
         </div>
 
         <div>
@@ -424,9 +690,10 @@ export default function EmployeeTimeline({
             type="date"
             value={leaveForm.startDate}
             onChange={(e) => handleLeaveFormChange("startDate", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.startDate ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
             required
           />
+          {renderError("startDate")}
         </div>
 
         <div>
@@ -437,9 +704,10 @@ export default function EmployeeTimeline({
             type="date"
             value={leaveForm.endDate}
             onChange={(e) => handleLeaveFormChange("endDate", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.endDate ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
             required
           />
+          {renderError("endDate")}
         </div>
 
         <div className="col-span-2">
@@ -450,10 +718,11 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.locationDuringLeave}
             onChange={(e) => handleLeaveFormChange("locationDuringLeave", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.locationDuringLeave ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
             required
             placeholder="Where will you be during your leave?"
           />
+          {renderError("locationDuringLeave")}
         </div>
 
         <div>
@@ -464,9 +733,10 @@ export default function EmployeeTimeline({
             type="tel"
             value={leaveForm.phoneNumber}
             onChange={(e) => handleLeaveFormChange("phoneNumber", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.phoneNumber ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
             required
           />
+          {renderError("phoneNumber")}
         </div>
 
         <div>
@@ -477,8 +747,9 @@ export default function EmployeeTimeline({
             type="date"
             value={leaveForm.dateOfRequest}
             onChange={(e) => handleLeaveFormChange("dateOfRequest", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.dateOfRequest ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
           />
+          {renderError("dateOfRequest")}
         </div>
 
         <div className="col-span-2">
@@ -486,8 +757,8 @@ export default function EmployeeTimeline({
             Reason for Leave (Optional)
           </label>
           <textarea
-            value={leaveForm.reason}
-            onChange={(e) => handleLeaveFormChange("reason", e.target.value)}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             rows={3}
             placeholder="Optional reason for leave"
@@ -502,12 +773,27 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employeeSignature}
             onChange={(e) => handleLeaveFormChange("employeeSignature", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className={`h-11 w-full rounded-lg border ${validationErrors.employeeSignature ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
             placeholder="Type your full name as signature"
             required
           />
+          {renderError("employeeSignature")}
         </div>
       </div>
+
+      {Object.keys(validationErrors).length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 text-red-800 font-medium mb-2">
+            <AlertCircle className="h-5 w-5" />
+            <span>Please fix the following errors:</span>
+          </div>
+          <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+            {Object.entries(validationErrors).map(([field, error]) => (
+              <li key={field}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mt-6 justify-end">
         <Button
@@ -520,7 +806,6 @@ export default function EmployeeTimeline({
         <Button
           type="button"
           onClick={handleLeaveFormSubmit}
-          disabled={!leaveForm.employeeName || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.employeeSignature}
         >
           Submit Leave Request
         </Button>
@@ -530,7 +815,6 @@ export default function EmployeeTimeline({
 
   return (
     <div className="space-y-6">
-      {/* Activities List */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Employee Timeline</h2>
         <Dialog>
@@ -559,34 +843,92 @@ export default function EmployeeTimeline({
         </Dialog>
       </div>
 
-      {/* Timeline - Show all activities */}
+      {/* Timeline Activities */}
       <div className="space-y-4">
         {activities.map((act) => (
-          <Card key={act._id}>
-            <CardContent className="flex justify-between items-center py-4">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(act.date).toLocaleDateString()}
-                </p>
-                <p className="font-semibold capitalize">{act.type}</p>
-                <p>{act.description}</p>
+          <Card key={act._id} className="hover:shadow-md transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <FileText className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">{act.type === 'leave' ? act.description.split(' - ')[0] : 'Concurrency Declaration'}</CardTitle>
+                    <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
+                      <CalendarDays className="h-4 w-4" />
+                      <span>Submitted: {new Date(act.date).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {act.type === 'leave' && getStatusBadge(act.status)}
+                </div>
               </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleDelete(act._id)}
-              >
-                Delete
-              </Button>
+            </CardHeader>
+            
+            <CardContent>
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-600">
+                  <p>{act.description}</p>
+                  {act.type === 'leave' && act.partBData && (
+                    <div className="mt-2 flex gap-4 text-xs">
+                      <span className="font-medium">Annual: {act.partBData.annualLeaveDays} days</span>
+                      <span className="font-medium text-red-600">Deducted: {act.partBData.deductedDays} days</span>
+                      <span className="font-medium text-green-600">Remaining: {act.partBData.remainingLeaveDays} days</span>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex gap-2">
+                  {act.type === 'leave' ? (
+                    act.partBData ? (
+                      <>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleViewPartB(act)}
+                        >
+                          View Part B
+                        </Button>
+                        <Button 
+                          variant="default" 
+                          size="sm"
+                          onClick={() => handleEditPartB(act)}
+                        >
+                          Edit Part B
+                        </Button>
+                      </>
+                    ) : (
+                      <Button 
+                        variant="default" 
+                        size="sm"
+                        onClick={() => handleEditPartB(act)}
+                      >
+                        Add Part B
+                      </Button>
+                    )
+                  ) : null}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(act._id)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         ))}
+
         {activities.length === 0 && (
           <Card>
             <CardContent className="py-8 text-center">
-              <p className="text-muted-foreground">No activities recorded yet.</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Use the "Add Activity" button to add new entries.
+              <FileText className="h-12 w-12 mx-auto text-gray-400 mb-3" />
+              <p className="text-lg font-medium text-gray-600">No activities recorded yet</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Use the "Add Activity" button to add new entries
               </p>
             </CardContent>
           </Card>
@@ -623,6 +965,20 @@ export default function EmployeeTimeline({
               setType("");
             }}
           />
+        </DialogContent>
+      </Dialog>
+
+      {/* Part B Dialog */}
+      <Dialog open={isPartBDialogOpen} onOpenChange={setIsPartBDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Leave Request - Part B (HR Section)</DialogTitle>
+            <DialogDescription>
+              {selectedActivity?.description}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {isEditMode ? renderPartBEdit() : renderPartBView()}
         </DialogContent>
       </Dialog>
     </div>

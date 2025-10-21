@@ -26,7 +26,7 @@ export const NewPasswordSchema = z.object({
 
 // 📝 Leave Request Schema
 // Define individual section schemas first
-const PartASchema = z.object({
+export const PartASchema = z.object({
   employeeName: z.string().min(1, "Employee name is required"),
   employmentNumber: z.string().min(1, "Employment number is required"),
   employeePosition: z.string().min(1, "Employee position is required"),
@@ -42,7 +42,7 @@ const PartASchema = z.object({
   path: ["endDate"],
 });
 
-const PartBSchema = z.object({
+export const PartBSchema = z.object({
   annualLeaveDays: z.number().min(0).max(365).default(21),
   deductedDays: z.number().min(0).max(365).optional(),
   remainingLeaveDays: z.number().min(0).max(365).optional(),
