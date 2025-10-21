@@ -11,7 +11,6 @@ import { getEmployeeById } from "@/actions/employee.actions";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectTrigger,
@@ -25,10 +24,12 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Modal } from "@/components/ui/modal";
 import { useModal } from "@/hooks/use-modal";
+import ConcurrencyForm from "@/components/dashboard/employees/concurrence-form";
+import { Plus, FileText } from "lucide-react";
 
 interface Activity {
   _id: string;
@@ -48,8 +49,8 @@ interface LeaveRequest {
   employeeId?: any;
 }
 
-// Types for the multi-section form
-interface PartAData {
+// Types for the leave form
+interface LeaveFormData {
   employeeName: string;
   employmentNumber: string;
   employeePosition: string;
@@ -71,14 +72,15 @@ export default function EmployeeTimeline({
 }) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
-  const [type, setType] = useState("leave");
-  const [description, setDescription] = useState("");
-  const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
+  const [type, setType] = useState("");
   const [employeeData, setEmployeeData] = useState<any>(null);
-  const { isOpen, openModal, closeModal } = useModal();
 
-  // Part A State (Employee Section)
-  const [partA, setPartA] = useState<PartAData>({
+  // Modals for different forms
+  const { isOpen: isLeaveModalOpen, openModal: openLeaveModal, closeModal: closeLeaveModal } = useModal();
+  const { isOpen: isConcurrencyModalOpen, openModal: openConcurrencyModal, closeModal: closeConcurrencyModal } = useModal();
+
+  // Leave Form State - Initialize with empty values, will be populated when employee data loads
+  const [leaveForm, setLeaveForm] = useState<LeaveFormData>({
     employeeName: "",
     employmentNumber: "",
     employeePosition: "",
@@ -93,6 +95,8 @@ export default function EmployeeTimeline({
     reason: "",
   });
 
+  const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
+
   async function loadActivities() {
     const data = await getEmployeeActivities(employeeId);
     if (!("error" in data)) setActivities(data as Activity[]);
@@ -102,7 +106,6 @@ export default function EmployeeTimeline({
     try {
       const requests = await getEmployeeLeaveRequests(employeeId);
       if (Array.isArray(requests)) {
-        // Filter to only get pending or approved leave requests
         const filteredRequests = requests.filter(request =>
           request.status === 'pending' || request.status === 'approved'
         );
@@ -118,13 +121,19 @@ export default function EmployeeTimeline({
       const employee = await getEmployeeById(employeeId);
       if (employee) {
         setEmployeeData(employee);
-        // Pre-fill employee details
-        setPartA(prev => ({
+
+        // Pre-fill employee details in leave form
+        const employeeName = `${employee.first_name} ${employee.last_name}`.trim();
+        const employmentNumber = employee.employment_number || "";
+        const employeePosition = employee.position || "";
+        const phoneNumber = employee.phone || "";
+
+        setLeaveForm(prev => ({
           ...prev,
-          employeeName: `${employee.first_name} ${employee.last_name}`.trim(),
-          employmentNumber: employee.employment_number || "",
-          employeePosition: employee.position || "",
-          phoneNumber: employee.phone || "",
+          employeeName,
+          employmentNumber,
+          employeePosition,
+          phoneNumber,
         }));
       }
     } catch (error) {
@@ -138,60 +147,46 @@ export default function EmployeeTimeline({
     loadEmployeeData();
   }, [employeeId]);
 
-  // Handle activity type change - open leave form when "leave" is selected
+  // Handle activity type change - open appropriate modal
   const handleTypeChange = async (value: string) => {
     setType(value);
     if (value === "leave") {
-      // Load latest data before opening modal
       await loadLeaveRequests();
-      await loadEmployeeData();
-      openModal();
+      await loadEmployeeData(); // Ensure latest employee data is loaded
+      openLeaveModal();
+    } else if (value === "concurrency") {
+      await loadEmployeeData(); // Ensure latest employee data is loaded
+      openConcurrencyModal();
     }
   };
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!description) return;
-
-    const result = await addEmployeeActivity({
-      employeeId,
-      type: type as any,
-      description,
-    });
-
-    if ("success" in result) {
-      setDescription("");
-      await loadActivities();
-    }
-  }
 
   async function handleDelete(id: string) {
     await deleteEmployeeActivity(id);
     await loadActivities();
   }
 
-  // Handle Part A changes
-  const handlePartAChange = (field: string, value: any) => {
-    setPartA(prev => ({ ...prev, [field]: value }));
+  // Handle Leave Form changes
+  const handleLeaveFormChange = (field: string, value: any) => {
+    setLeaveForm(prev => ({ ...prev, [field]: value }));
 
     // Recalculate days if dates change
-    if ((field === "startDate" || field === "endDate") && partA.startDate && partA.endDate) {
-      const numberOfDays = calculateDaysDifference(new Date(partA.startDate), new Date(partA.endDate));
-      setPartA(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
+    if ((field === "startDate" || field === "endDate") && leaveForm.startDate && leaveForm.endDate) {
+      const numberOfDays = calculateDaysDifference(new Date(leaveForm.startDate), new Date(leaveForm.endDate));
+      setLeaveForm(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
     }
   };
 
-  // Pre-fill form with selected leave request
+  // Pre-fill leave form with selected leave request
   const handleSelectLeaveRequest = (request: LeaveRequest) => {
     setSelectedLeaveRequest(request);
-    setPartA(prev => ({
+    setLeaveForm(prev => ({
       ...prev,
       startDate: new Date(request.startDate).toISOString().split('T')[0],
       endDate: new Date(request.endDate).toISOString().split('T')[0],
       numberOfLeaveDays: request.days,
       leaveType: request.leaveType,
       reason: request.reason || "",
-      locationDuringLeave: request.reason || "", // Using reason as location for now
+      locationDuringLeave: request.reason || "",
     }));
   };
 
@@ -202,16 +197,14 @@ export default function EmployeeTimeline({
 
   // Submit the leave form and create activity
   const handleLeaveFormSubmit = async () => {
-    if (!partA.employeeName || !partA.startDate || !partA.endDate || !partA.employeeSignature) {
+    if (!leaveForm.employeeName || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.employeeSignature) {
       alert("Please fill in all required fields");
       return;
     }
 
     try {
-      // Create the activity with leave details
-      const leaveDescription = `Leave Request: ${partA.leaveType} - ${partA.numberOfLeaveDays} days from ${partA.startDate} to ${partA.endDate}. Location: ${partA.locationDuringLeave}`;
+      const leaveDescription = `Leave Request: ${leaveForm.leaveType} - ${leaveForm.numberOfLeaveDays} days from ${leaveForm.startDate} to ${leaveForm.endDate}. Location: ${leaveForm.locationDuringLeave}`;
 
-      // Store the leave request ID in the description for reference
       const finalDescription = selectedLeaveRequest
         ? `${leaveDescription} (Based on Leave Request: ${selectedLeaveRequest._id})`
         : leaveDescription;
@@ -223,28 +216,70 @@ export default function EmployeeTimeline({
       });
 
       if ("success" in result) {
-        // Reset form and close modal
-        setPartA({
-          employeeName: employeeData ? `${employeeData.first_name} ${employeeData.last_name}`.trim() : "",
-          employmentNumber: employeeData?.employment_number || "",
-          employeePosition: employeeData?.position || "",
+        // Reset form but keep employee data
+        setLeaveForm(prev => ({
+          ...prev,
           numberOfLeaveDays: 0,
           startDate: "",
           endDate: "",
           locationDuringLeave: "",
-          phoneNumber: employeeData?.phone || "",
           dateOfRequest: new Date().toISOString().split('T')[0],
           employeeSignature: "",
           leaveType: "annual",
           reason: "",
-        });
+        }));
         setSelectedLeaveRequest(null);
-        closeModal();
+        setType("");
+        closeLeaveModal();
         await loadActivities();
       }
     } catch (error) {
       console.error("Failed to submit leave request:", error);
     }
+  };
+
+  // Handle concurrency form success
+  const handleConcurrencySuccess = () => {
+    // Create activity record for concurrency declaration
+    addEmployeeActivity({
+      employeeId,
+      type: "concurrency",
+      description: "Concurrency declaration submitted",
+    }).then(() => {
+      loadActivities();
+    });
+
+    setType("");
+    closeConcurrencyModal();
+  };
+
+  // Reset leave form when modal closes (but keep employee data)
+  const handleLeaveModalClose = () => {
+    if (employeeData) {
+      const employeeName = `${employeeData.first_name} ${employeeData.last_name}`.trim();
+      const employmentNumber = employeeData.employment_number || "";
+      const employeePosition = employeeData.position || "";
+      const phoneNumber = employeeData.phone || "";
+
+      setLeaveForm(prev => ({
+        ...prev,
+        employeeName,
+        employmentNumber,
+        employeePosition,
+        phoneNumber,
+        numberOfLeaveDays: 0,
+        startDate: "",
+        endDate: "",
+        locationDuringLeave: "",
+        dateOfRequest: new Date().toISOString().split('T')[0],
+        employeeSignature: "",
+        leaveType: "annual",
+        reason: "",
+      }));
+    }
+    setSelectedLeaveRequest(null);
+    setType("");
+    closeLeaveModal();
   };
 
   // Render Leave Request Selection
@@ -287,7 +322,7 @@ export default function EmployeeTimeline({
         </div>
       ) : (
         <p className="text-sm text-gray-500 text-center py-4">
-          No pending or approved leave requests found for this employee.
+          No pending or approved leave requests found.
         </p>
       )}
 
@@ -303,13 +338,14 @@ export default function EmployeeTimeline({
     </div>
   );
 
-  // Render Part A Form (Employee Section)
+  // Render Leave Form
   const renderLeaveForm = () => (
     <div className="space-y-4 max-h-[80vh] overflow-y-auto p-2">
-      <h3 className="text-lg font-semibold text-gray-800">Leave Request Form - Part A</h3>
-      <p className="text-sm text-gray-600">Employee Section</p>
+      <h3 className="text-lg font-semibold text-gray-800">Leave Request Form</h3>
+      <p className="text-sm text-gray-600">
+        Employee: {employeeData ? `${employeeData.first_name} ${employeeData.last_name}` : 'Loading...'}
+      </p>
 
-      {/* Leave Request Selection */}
       {renderLeaveRequestSelection()}
 
       <div className="grid grid-cols-2 gap-4">
@@ -319,8 +355,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="text"
-            value={partA.employeeName}
-            onChange={(e) => handlePartAChange("employeeName", e.target.value)}
+            value={leaveForm.employeeName}
+            onChange={(e) => handleLeaveFormChange("employeeName", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
           />
@@ -332,8 +368,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="text"
-            value={partA.employmentNumber}
-            onChange={(e) => handlePartAChange("employmentNumber", e.target.value)}
+            value={leaveForm.employmentNumber}
+            onChange={(e) => handleLeaveFormChange("employmentNumber", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
           />
@@ -345,8 +381,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="text"
-            value={partA.employeePosition}
-            onChange={(e) => handlePartAChange("employeePosition", e.target.value)}
+            value={leaveForm.employeePosition}
+            onChange={(e) => handleLeaveFormChange("employeePosition", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
           />
@@ -357,8 +393,8 @@ export default function EmployeeTimeline({
             Leave Type
           </label>
           <select
-            value={partA.leaveType}
-            onChange={(e) => handlePartAChange("leaveType", e.target.value)}
+            value={leaveForm.leaveType}
+            onChange={(e) => handleLeaveFormChange("leaveType", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
           >
             <option value="annual">Annual Leave</option>
@@ -374,7 +410,7 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="number"
-            value={partA.numberOfLeaveDays}
+            value={leaveForm.numberOfLeaveDays}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled
           />
@@ -386,8 +422,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="date"
-            value={partA.startDate}
-            onChange={(e) => handlePartAChange("startDate", e.target.value)}
+            value={leaveForm.startDate}
+            onChange={(e) => handleLeaveFormChange("startDate", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
           />
@@ -399,8 +435,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="date"
-            value={partA.endDate}
-            onChange={(e) => handlePartAChange("endDate", e.target.value)}
+            value={leaveForm.endDate}
+            onChange={(e) => handleLeaveFormChange("endDate", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
           />
@@ -412,8 +448,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="text"
-            value={partA.locationDuringLeave}
-            onChange={(e) => handlePartAChange("locationDuringLeave", e.target.value)}
+            value={leaveForm.locationDuringLeave}
+            onChange={(e) => handleLeaveFormChange("locationDuringLeave", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
             placeholder="Where will you be during your leave?"
@@ -426,8 +462,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="tel"
-            value={partA.phoneNumber}
-            onChange={(e) => handlePartAChange("phoneNumber", e.target.value)}
+            value={leaveForm.phoneNumber}
+            onChange={(e) => handleLeaveFormChange("phoneNumber", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             required
           />
@@ -439,8 +475,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="date"
-            value={partA.dateOfRequest}
-            onChange={(e) => handlePartAChange("dateOfRequest", e.target.value)}
+            value={leaveForm.dateOfRequest}
+            onChange={(e) => handleLeaveFormChange("dateOfRequest", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
           />
         </div>
@@ -450,8 +486,8 @@ export default function EmployeeTimeline({
             Reason for Leave (Optional)
           </label>
           <textarea
-            value={partA.reason}
-            onChange={(e) => handlePartAChange("reason", e.target.value)}
+            value={leaveForm.reason}
+            onChange={(e) => handleLeaveFormChange("reason", e.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             rows={3}
             placeholder="Optional reason for leave"
@@ -464,8 +500,8 @@ export default function EmployeeTimeline({
           </label>
           <input
             type="text"
-            value={partA.employeeSignature}
-            onChange={(e) => handlePartAChange("employeeSignature", e.target.value)}
+            value={leaveForm.employeeSignature}
+            onChange={(e) => handleLeaveFormChange("employeeSignature", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             placeholder="Type your full name as signature"
             required
@@ -477,18 +513,14 @@ export default function EmployeeTimeline({
         <Button
           type="button"
           variant="outline"
-          onClick={() => {
-            closeModal();
-            setType(""); // Reset type when closing
-            setSelectedLeaveRequest(null);
-          }}
+          onClick={handleLeaveModalClose}
         >
           Cancel
         </Button>
         <Button
           type="button"
           onClick={handleLeaveFormSubmit}
-          disabled={!partA.employeeName || !partA.startDate || !partA.endDate || !partA.employeeSignature}
+          disabled={!leaveForm.employeeName || !leaveForm.startDate || !leaveForm.endDate || !leaveForm.employeeSignature}
         >
           Submit Leave Request
         </Button>
@@ -508,44 +540,26 @@ export default function EmployeeTimeline({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Activity</DialogTitle>
+              <DialogDescription>
+                Select an activity type to open the corresponding form.
+              </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-4">
               <Select onValueChange={handleTypeChange} value={type}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="leave">Leave</SelectItem>
-                  <SelectItem value="suspension">Suspension</SelectItem>
-                  <SelectItem value="disciplinary">Disciplinary</SelectItem>
-                  <SelectItem value="promotion">Promotion</SelectItem>
-                  <SelectItem value="transfer">Transfer</SelectItem>
-                  <SelectItem value="award">Award</SelectItem>
-                  <SelectItem value="training">Training</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
+                  <SelectItem value="concurrency">Concurrency Declaration</SelectItem>
                 </SelectContent>
               </Select>
-
-              {type !== "leave" && (
-                <Input
-                  placeholder="Description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  required={type !== "leave"}
-                />
-              )}
-
-              {type !== "leave" && (
-                <DialogFooter>
-                  <Button type="submit">Save Activity</Button>
-                </DialogFooter>
-              )}
-            </form>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Timeline */}
+      {/* Timeline - Show all activities */}
       <div className="space-y-4">
         {activities.map((act) => (
           <Card key={act._id}>
@@ -567,20 +581,50 @@ export default function EmployeeTimeline({
             </CardContent>
           </Card>
         ))}
+        {activities.length === 0 && (
+          <Card>
+            <CardContent className="py-8 text-center">
+              <p className="text-muted-foreground">No activities recorded yet.</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Use the "Add Activity" button to add new entries.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Leave Form Modal */}
       <Modal
-        isOpen={isOpen}
-        onClose={() => {
-          closeModal();
-          setType(""); // Reset type when closing
-          setSelectedLeaveRequest(null);
-        }}
+        isOpen={isLeaveModalOpen}
+        onClose={handleLeaveModalClose}
         className="max-w-4xl p-6 lg:p-10 max-h-[90vh] overflow-y-auto"
       >
         {renderLeaveForm()}
       </Modal>
+
+      {/* Concurrency Declaration Modal */}
+      <Dialog open={isConcurrencyModalOpen} onOpenChange={closeConcurrencyModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Concurrency Declaration Form
+            </DialogTitle>
+            <DialogDescription>
+              Complete the concurrence declaration for {employeeData ? `${employeeData.first_name} ${employeeData.last_name}` : 'this employee'}.
+            </DialogDescription>
+          </DialogHeader>
+          <ConcurrencyForm
+            employee={employeeData}
+            mode="create"
+            onSuccess={handleConcurrencySuccess}
+            onCancel={() => {
+              closeConcurrencyModal();
+              setType("");
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

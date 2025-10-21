@@ -23,7 +23,7 @@ const init = async () => {
 // ----------------------
 export const addEmployeeActivity = async (data: {
     employeeId: string;
-    type: "leave" | "suspension" | "disciplinary" | "promotion" | "transfer" | "award" | "training" | "other";
+    type: "leave" | "concurrency";
     description: string;
     date?: Date;
 }) => {
