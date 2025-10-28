@@ -6,7 +6,11 @@ import {
   getEmployeeActivities,
   deleteEmployeeActivity,
 } from "@/actions/employee.activities.actions";
-import { getEmployeeLeaveRequests } from "@/actions/leaves.actions";
+import {
+  getEmployeeLeaveRequests,
+  createLeaveRequest,
+  updateLeaveRequestWithPartB
+} from "@/actions/leaves.actions";
 import { getEmployeeById } from "@/actions/employee.actions";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +34,7 @@ import {
 import { Modal } from "@/components/ui/modal";
 import { useModal } from "@/hooks/use-modal";
 import ConcurrencyForm from "@/components/dashboard/employees/concurrence-form";
-import { Plus, FileText, AlertCircle, CalendarDays, User, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Plus, FileText, AlertCircle, CalendarDays, CheckCircle, XCircle, Clock } from "lucide-react";
 import { PartASchema, PartBSchema, type PartAData, type PartBData } from "@/schemas";
 
 interface Activity {
@@ -51,16 +55,18 @@ interface LeaveRequest {
   reason?: string;
   status: string;
   employeeId?: any;
+  partAData?: PartAData;
+  partBData?: PartBData;
 }
 
 interface EmployeeData {
-  _id: string;
   first_name: string;
-  last_name: string;
+  surname: string;
   employment_number?: string;
   position?: string;
   phone?: string;
   email?: string;
+  current_address?: string;
 }
 
 export default function EmployeeTimeline({
@@ -77,22 +83,31 @@ export default function EmployeeTimeline({
   // Modals
   const { isOpen: isLeaveModalOpen, openModal: openLeaveModal, closeModal: closeLeaveModal } = useModal();
   const { isOpen: isConcurrencyModalOpen, openModal: openConcurrencyModal, closeModal: closeConcurrencyModal } = useModal();
-  
+
   // Part B Dialog state
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [isPartBDialogOpen, setIsPartBDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // Leave Form state
+  // Leave Form state - Updated to match employee form structure
   const [leaveForm, setLeaveForm] = useState({
+    // Personal Information (from employee form)
     employeeName: "",
     employmentNumber: "",
     employeePosition: "",
+    email: "",
+    phoneNumber: "",
+    currentAddress: "",
+
+    // Leave Specific Information
+    leaveType: "annual",
     numberOfLeaveDays: 0,
     startDate: "",
     endDate: "",
     locationDuringLeave: "",
-    phoneNumber: "",
+    reason: "",
+
+    // Dates and Signature
     dateOfRequest: new Date().toISOString().split('T')[0],
     employeeSignature: "",
   });
@@ -106,16 +121,16 @@ export default function EmployeeTimeline({
     hrSignature: "",
   });
 
-  const [leaveType, setLeaveType] = useState<"annual" | "sick" | "personal" | "unpaid">("annual");
-  const [reason, setReason] = useState("");
   const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
 
-  // Initialize leave form with employee data
+  // Initialize leave form with comprehensive employee data
   const initializeLeaveFormWithEmployeeData = (employee: EmployeeData) => {
-    const employeeName = `${employee.first_name} ${employee.last_name}`.trim();
+    const employeeName = `${employee.first_name} ${employee.surname}`.trim();
     const employmentNumber = employee.employment_number || "";
     const employeePosition = employee.position || "";
     const phoneNumber = employee.phone || "";
+    const email = employee.email || "";
+    const currentAddress = employee.current_address || "";
 
     setLeaveForm(prev => ({
       ...prev,
@@ -123,6 +138,8 @@ export default function EmployeeTimeline({
       employmentNumber,
       employeePosition,
       phoneNumber,
+      email,
+      currentAddress,
     }));
   };
 
@@ -192,12 +209,19 @@ export default function EmployeeTimeline({
     setIsPartBDialogOpen(true);
   };
 
-  const handleEditPartB = (activity: Activity) => {
+  const handleEditPartB = async (activity: Activity) => {
     setSelectedActivity(activity);
+
+    // Find the corresponding leave request to get the actual days
+    const leaveRequest = leaveRequests.find(req =>
+      activity.description.includes(req._id) ||
+      activity.description.includes(`Leave Request: ${req.leaveType}`)
+    );
+
     if (activity.partBData) {
       setPartBForm(activity.partBData);
     } else {
-      const extractedDays = extractDaysFromDescription(activity.description);
+      const extractedDays = leaveRequest?.days || extractDaysFromDescription(activity.description);
       setPartBForm({
         annualLeaveDays: 21,
         deductedDays: extractedDays,
@@ -218,13 +242,13 @@ export default function EmployeeTimeline({
   const handlePartBFormChange = (field: keyof PartBData, value: any) => {
     setPartBForm(prev => {
       const updated = { ...prev, [field]: value };
-      
+
       if (field === "deductedDays" || field === "annualLeaveDays") {
         const annual = field === "annualLeaveDays" ? value : prev.annualLeaveDays || 21;
         const deducted = field === "deductedDays" ? value : prev.deductedDays || 0;
         updated.remainingLeaveDays = annual - deducted;
       }
-      
+
       return updated;
     });
   };
@@ -232,21 +256,38 @@ export default function EmployeeTimeline({
   const handleSavePartB = async () => {
     try {
       PartBSchema.parse(partBForm);
-      
-      // Save Part B data - you'll need to implement this API call
-      // await updateLeaveActivityPartB(selectedActivity._id, partBForm);
-      
-      console.log("Saving Part B data:", partBForm);
-      
-      // Update local state
-      setActivities(prev => 
-        prev.map(act => 
-          act._id === selectedActivity?._id 
-            ? { ...act, partBData: partBForm, status: "approved" }
-            : act
-        )
-      );
-      
+
+      // Save Part B data to the leave request
+      if (selectedActivity) {
+        // Find the corresponding leave request
+        const leaveRequest = leaveRequests.find(req =>
+          selectedActivity.description.includes(req._id)
+        );
+
+        if (leaveRequest) {
+          const result = await updateLeaveRequestWithPartB(leaveRequest._id, partBForm);
+          if ("success" in result) {
+            // Update local state
+            setActivities(prev =>
+              prev.map(act =>
+                act._id === selectedActivity?._id
+                  ? { ...act, partBData: partBForm, status: "approved" }
+                  : act
+              )
+            );
+
+            // Update leave requests
+            setLeaveRequests(prev =>
+              prev.map(req =>
+                req._id === leaveRequest._id
+                  ? { ...req, partBData: partBForm, status: "approved" }
+                  : req
+              )
+            );
+          }
+        }
+      }
+
       setIsPartBDialogOpen(false);
       setIsEditMode(false);
     } catch (error) {
@@ -289,7 +330,7 @@ export default function EmployeeTimeline({
 
   const handleLeaveFormChange = (field: string, value: any) => {
     setLeaveForm(prev => ({ ...prev, [field]: value }));
-    
+
     if (validationErrors[field]) {
       setValidationErrors(prev => {
         const newErrors = { ...prev };
@@ -301,7 +342,7 @@ export default function EmployeeTimeline({
     if (field === "startDate" || field === "endDate") {
       const startDate = field === "startDate" ? value : leaveForm.startDate;
       const endDate = field === "endDate" ? value : leaveForm.endDate;
-      
+
       if (startDate && endDate) {
         const numberOfDays = calculateDaysDifference(new Date(startDate), new Date(endDate));
         setLeaveForm(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
@@ -313,12 +354,12 @@ export default function EmployeeTimeline({
     setSelectedLeaveRequest(request);
     setLeaveForm(prev => ({
       ...prev,
+      leaveType: request.leaveType,
       startDate: new Date(request.startDate).toISOString().split('T')[0],
       endDate: new Date(request.endDate).toISOString().split('T')[0],
       numberOfLeaveDays: request.days,
+      reason: request.reason || "",
     }));
-    setLeaveType(request.leaveType as any);
-    setReason(request.reason || "");
   };
 
   const calculateDaysDifference = (start: Date, end: Date) => {
@@ -332,21 +373,46 @@ export default function EmployeeTimeline({
     }
 
     try {
-      const leaveDescription = `Leave Request: ${leaveType} - ${leaveForm.numberOfLeaveDays} days from ${leaveForm.startDate} to ${leaveForm.endDate}. Location: ${leaveForm.locationDuringLeave}${reason ? `. Reason: ${reason}` : ''}`;
+      // Prepare Part A data
+      const partAData: PartAData = {
+        employeeName: leaveForm.employeeName,
+        employmentNumber: leaveForm.employmentNumber,
+        employeePosition: leaveForm.employeePosition,
+        numberOfLeaveDays: leaveForm.numberOfLeaveDays,
+        startDate: new Date(leaveForm.startDate),
+        endDate: new Date(leaveForm.endDate),
+        locationDuringLeave: leaveForm.locationDuringLeave,
+        phoneNumber: leaveForm.phoneNumber,
+        dateOfRequest: new Date(leaveForm.dateOfRequest),
+        employeeSignature: leaveForm.employeeSignature,
+      };
 
-      const finalDescription = selectedLeaveRequest
-        ? `${leaveDescription} (Based on Leave Request: ${selectedLeaveRequest._id})`
-        : leaveDescription;
-
-      const result = await addEmployeeActivity({
+      // Create leave request in the leave_requests collection
+      const leaveRequestData = {
         employeeId,
-        type: "leave",
-        description: finalDescription,
-      });
+        leaveType: leaveForm.leaveType,
+        startDate: new Date(leaveForm.startDate),
+        endDate: new Date(leaveForm.endDate),
+        days: leaveForm.numberOfLeaveDays,
+        reason: leaveForm.reason,
+        status: "pending",
+      };
+
+      const result = await createLeaveRequest(leaveRequestData, partAData);
 
       if ("success" in result) {
+        // Also create an activity entry for the timeline
+        const leaveDescription = `Leave Request: ${leaveForm.leaveType} - ${leaveForm.numberOfLeaveDays} days from ${leaveForm.startDate} to ${leaveForm.endDate}. Location: ${leaveForm.locationDuringLeave}${leaveForm.reason ? `. Reason: ${leaveForm.reason}` : ''}`;
+
+        await addEmployeeActivity({
+          employeeId,
+          type: "leave",
+          description: leaveDescription,
+        });
+
         handleLeaveModalClose();
         await loadActivities();
+        await loadLeaveRequests();
       }
     } catch (error) {
       console.error("Failed to submit leave request:", error);
@@ -368,22 +434,24 @@ export default function EmployeeTimeline({
   };
 
   const handleLeaveModalClose = () => {
+    // Reset form but keep basic employee information
     if (employeeData) {
       initializeLeaveFormWithEmployeeData(employeeData);
     }
-    
+
+    // Only reset leave-specific fields
     setLeaveForm(prev => ({
       ...prev,
+      leaveType: "annual",
       numberOfLeaveDays: 0,
       startDate: "",
       endDate: "",
       locationDuringLeave: "",
+      reason: "",
       dateOfRequest: new Date().toISOString().split('T')[0],
       employeeSignature: "",
     }));
-    
-    setLeaveType("annual");
-    setReason("");
+
     setSelectedLeaveRequest(null);
     setValidationErrors({});
     setType("");
@@ -425,8 +493,8 @@ export default function EmployeeTimeline({
             <div
               key={request._id}
               className={`p-3 border rounded cursor-pointer transition-colors ${selectedLeaveRequest?._id === request._id
-                  ? "bg-blue-50 border-blue-300"
-                  : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+                ? "bg-blue-50 border-blue-300"
+                : "bg-gray-50 border-gray-200 hover:bg-gray-100"
                 }`}
               onClick={() => handleSelectLeaveRequest(request)}
             >
@@ -440,8 +508,8 @@ export default function EmployeeTimeline({
                 <div className="text-right">
                   <p className="text-sm font-medium">{request.days} days</p>
                   <p className={`text-xs px-2 py-1 rounded-full ${request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                      request.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
+                    request.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                      'bg-yellow-100 text-yellow-800'
                     }`}>
                     {request.status}
                   </p>
@@ -474,32 +542,32 @@ export default function EmployeeTimeline({
   const renderPartBView = () => (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Part B - HR Section</h3>
-      
+
       <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
         <div>
           <label className="text-sm font-medium text-gray-600">Annual Leave Days</label>
           <p className="text-lg font-semibold">{partBForm.annualLeaveDays}</p>
         </div>
-        
+
         <div>
           <label className="text-sm font-medium text-gray-600">Deducted Days</label>
           <p className="text-lg font-semibold text-red-600">{partBForm.deductedDays}</p>
         </div>
-        
+
         <div>
           <label className="text-sm font-medium text-gray-600">Remaining Leave Days</label>
           <p className="text-lg font-semibold text-green-600">{partBForm.remainingLeaveDays}</p>
         </div>
-        
+
         <div>
           <label className="text-sm font-medium text-gray-600">Date of Approval</label>
           <p className="text-lg font-semibold">
-            {partBForm.dateOfApproval 
-              ? new Date(partBForm.dateOfApproval).toLocaleDateString() 
+            {partBForm.dateOfApproval
+              ? new Date(partBForm.dateOfApproval).toLocaleDateString()
               : "Not set"}
           </p>
         </div>
-        
+
         <div className="col-span-2">
           <label className="text-sm font-medium text-gray-600">HR Signature</label>
           <p className="text-lg font-semibold">{partBForm.hrSignature || "Not signed"}</p>
@@ -516,7 +584,7 @@ export default function EmployeeTimeline({
   const renderPartBEdit = () => (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Part B - HR Section (Edit)</h3>
-      
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -600,14 +668,44 @@ export default function EmployeeTimeline({
   const renderLeaveForm = () => (
     <div className="space-y-4 max-h-[80vh] overflow-y-auto p-2">
       <h3 className="text-lg font-semibold text-gray-800">Leave Request Form (Part A)</h3>
-      <p className="text-sm text-gray-600">
-        Employee: {employeeData ? `${employeeData.first_name} ${employeeData.last_name}` : 'Loading...'}
-        {employeeData?.employment_number && ` (${employeeData.employment_number})`}
-      </p>
+
+      {/* Employee Information Summary */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+        <h4 className="font-medium text-blue-800 mb-2">Employee Information</h4>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <span className="text-blue-600">Name:</span> {leaveForm.employeeName}
+          </div>
+          <div>
+            <span className="text-blue-600">Employment #:</span> {leaveForm.employmentNumber}
+          </div>
+          <div>
+            <span className="text-blue-600">Position:</span> {leaveForm.employeePosition}
+          </div>
+          <div>
+            <span className="text-blue-600">Phone:</span> {leaveForm.phoneNumber}
+          </div>
+          {leaveForm.email && (
+            <div>
+              <span className="text-blue-600">Email:</span> {leaveForm.email}
+            </div>
+          )}
+          {leaveForm.currentAddress && (
+            <div className="col-span-2">
+              <span className="text-blue-600">Address:</span> {leaveForm.currentAddress}
+            </div>
+          )}
+        </div>
+      </div>
 
       {renderLeaveRequestSelection()}
 
       <div className="grid grid-cols-2 gap-4">
+        {/* Personal Information Section - Auto-filled and read-only */}
+        <div className="col-span-2">
+          <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Personal Information</h4>
+        </div>
+
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
             Employee Name *
@@ -616,7 +714,7 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employeeName}
             onChange={(e) => handleLeaveFormChange("employeeName", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.employeeName ? 'border-red-500' : 'border-gray-300'} bg-gray-50 px-4 py-2.5 text-sm text-gray-800`}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
           />
@@ -631,7 +729,7 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employmentNumber}
             onChange={(e) => handleLeaveFormChange("employmentNumber", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.employmentNumber ? 'border-red-500' : 'border-gray-300'} bg-gray-50 px-4 py-2.5 text-sm text-gray-800`}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
           />
@@ -646,7 +744,7 @@ export default function EmployeeTimeline({
             type="text"
             value={leaveForm.employeePosition}
             onChange={(e) => handleLeaveFormChange("employeePosition", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.employeePosition ? 'border-red-500' : 'border-gray-300'} bg-gray-50 px-4 py-2.5 text-sm text-gray-800`}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
           />
@@ -655,17 +753,40 @@ export default function EmployeeTimeline({
 
         <div>
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Leave Type
+            Phone Number *
+          </label>
+          <input
+            type="tel"
+            value={leaveForm.phoneNumber}
+            onChange={(e) => handleLeaveFormChange("phoneNumber", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
+            required
+            readOnly
+          />
+          {renderError("phoneNumber")}
+        </div>
+
+        {/* Leave Specific Information */}
+        <div className="col-span-2">
+          <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Leave Details</h4>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+            Leave Type *
           </label>
           <select
-            value={leaveType}
-            onChange={(e) => setLeaveType(e.target.value as any)}
+            value={leaveForm.leaveType}
+            onChange={(e) => handleLeaveFormChange("leaveType", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
           >
             <option value="annual">Annual Leave</option>
             <option value="sick">Sick Leave</option>
             <option value="personal">Personal Leave</option>
             <option value="unpaid">Unpaid Leave</option>
+            <option value="maternity">Maternity Leave</option>
+            <option value="paternity">Paternity Leave</option>
+            <option value="compassionate">Compassionate Leave</option>
           </select>
         </div>
 
@@ -725,18 +846,22 @@ export default function EmployeeTimeline({
           {renderError("locationDuringLeave")}
         </div>
 
-        <div>
+        <div className="col-span-2">
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Phone Number *
+            Reason for Leave
           </label>
-          <input
-            type="tel"
-            value={leaveForm.phoneNumber}
-            onChange={(e) => handleLeaveFormChange("phoneNumber", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.phoneNumber ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
-            required
+          <textarea
+            value={leaveForm.reason}
+            onChange={(e) => handleLeaveFormChange("reason", e.target.value)}
+            className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            rows={3}
+            placeholder="Please provide a reason for your leave (optional)"
           />
-          {renderError("phoneNumber")}
+        </div>
+
+        {/* Signature Section */}
+        <div className="col-span-2">
+          <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Declaration</h4>
         </div>
 
         <div>
@@ -754,19 +879,6 @@ export default function EmployeeTimeline({
 
         <div className="col-span-2">
           <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Reason for Leave (Optional)
-          </label>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            rows={3}
-            placeholder="Optional reason for leave"
-          />
-        </div>
-
-        <div className="col-span-2">
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
             Employee Signature *
           </label>
           <input
@@ -778,6 +890,9 @@ export default function EmployeeTimeline({
             required
           />
           {renderError("employeeSignature")}
+          <p className="text-xs text-gray-500 mt-1">
+            By signing, I declare that the information provided is true and correct
+          </p>
         </div>
       </div>
 
@@ -866,7 +981,7 @@ export default function EmployeeTimeline({
                 </div>
               </div>
             </CardHeader>
-            
+
             <CardContent>
               <div className="flex justify-between items-center">
                 <div className="text-sm text-gray-600">
@@ -879,20 +994,20 @@ export default function EmployeeTimeline({
                     </div>
                   )}
                 </div>
-                
+
                 <div className="flex gap-2">
                   {act.type === 'leave' ? (
                     act.partBData ? (
                       <>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => handleViewPartB(act)}
                         >
                           View Part B
                         </Button>
-                        <Button 
-                          variant="default" 
+                        <Button
+                          variant="default"
                           size="sm"
                           onClick={() => handleEditPartB(act)}
                         >
@@ -900,8 +1015,8 @@ export default function EmployeeTimeline({
                         </Button>
                       </>
                     ) : (
-                      <Button 
-                        variant="default" 
+                      <Button
+                        variant="default"
                         size="sm"
                         onClick={() => handleEditPartB(act)}
                       >
@@ -953,7 +1068,7 @@ export default function EmployeeTimeline({
               Concurrency Declaration Form
             </DialogTitle>
             <DialogDescription>
-              Complete the concurrence declaration for {employeeData ? `${employeeData.first_name} ${employeeData.last_name}` : 'this employee'}.
+              Complete the concurrence declaration for {employeeData ? `${employeeData.first_name} ${employeeData.surname}` : 'this employee'}.
             </DialogDescription>
           </DialogHeader>
           <ConcurrencyForm
@@ -977,7 +1092,7 @@ export default function EmployeeTimeline({
               {selectedActivity?.description}
             </DialogDescription>
           </DialogHeader>
-          
+
           {isEditMode ? renderPartBEdit() : renderPartBView()}
         </DialogContent>
       </Dialog>

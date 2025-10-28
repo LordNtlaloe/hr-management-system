@@ -120,7 +120,7 @@ export default function EmployeeProfilePage({
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Employee Profile</h1>
         <div className="flex space-x-4">
-          <Button
+          {/* <Button
             onClick={handleOpenConcurrencyForm}
             className="flex items-center gap-2"
           >
@@ -129,7 +129,7 @@ export default function EmployeeProfilePage({
           </Button>
           <Button onClick={handleEditProfile} variant="default">
             Edit Profile
-          </Button>
+          </Button> */}
           <Button onClick={handleBackToList} variant="outline">
             Back to List
           </Button>
