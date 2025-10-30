@@ -60,13 +60,19 @@ interface LeaveRequest {
 }
 
 interface EmployeeData {
-  first_name: string;
-  surname: string;
-  employment_number?: string;
-  position?: string;
-  phone?: string;
-  email?: string;
-  current_address?: string;
+  employee_details?: {
+    surname: string;
+    other_names: string;
+    employment_number?: string;
+    position?: string;
+    phone?: string;
+    email?: string;
+    current_address?: string;
+  };
+  legal_info?: any;
+  education_history?: any;
+  employment_history?: any;
+  references?: any;
 }
 
 export default function EmployeeTimeline({
@@ -79,17 +85,18 @@ export default function EmployeeTimeline({
   const [type, setType] = useState("");
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [isLoadingEmployeeData, setIsLoadingEmployeeData] = useState(false);
 
-  // Modals
-  const { isOpen: isLeaveModalOpen, openModal: openLeaveModal, closeModal: closeLeaveModal } = useModal();
-  const { isOpen: isConcurrencyModalOpen, openModal: openConcurrencyModal, closeModal: closeConcurrencyModal } = useModal();
+  // FIXED: Simplified modal state - using useState instead of useModal hook
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isConcurrencyModalOpen, setIsConcurrencyModalOpen] = useState(false);
 
   // Part B Dialog state
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [isPartBDialogOpen, setIsPartBDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  // Leave Form state - Updated to match employee form structure
+  // Leave Form state
   const [leaveForm, setLeaveForm] = useState({
     // Personal Information (from employee form)
     employeeName: "",
@@ -123,14 +130,29 @@ export default function EmployeeTimeline({
 
   const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
 
-  // Initialize leave form with comprehensive employee data
+  // Initialize leave form with correct employee data structure
   const initializeLeaveFormWithEmployeeData = (employee: EmployeeData) => {
-    const employeeName = `${employee.first_name} ${employee.surname}`.trim();
-    const employmentNumber = employee.employment_number || "";
-    const employeePosition = employee.position || "";
-    const phoneNumber = employee.phone || "";
-    const email = employee.email || "";
-    const currentAddress = employee.current_address || "";
+    if (!employee?.employee_details) {
+      console.log("No employee details found");
+      return;
+    }
+
+    const employeeDetails = employee.employee_details;
+    const employeeName = `${employeeDetails.other_names || ''} ${employeeDetails.surname || ''}`.trim();
+    const employmentNumber = employeeDetails.employment_number || "";
+    const employeePosition = employeeDetails.position || "";
+    const phoneNumber = employeeDetails.phone || "";
+    const email = employeeDetails.email || "";
+    const currentAddress = employeeDetails.current_address || "";
+
+    console.log("Initializing form with employee data:", {
+      employeeName,
+      employmentNumber,
+      employeePosition,
+      phoneNumber,
+      email,
+      currentAddress
+    });
 
     setLeaveForm(prev => ({
       ...prev,
@@ -146,13 +168,21 @@ export default function EmployeeTimeline({
   // Load data
   async function loadEmployeeData() {
     try {
+      setIsLoadingEmployeeData(true);
+      console.log("Loading employee data for ID:", employeeId);
       const employee = await getEmployeeById(employeeId);
+      console.log("Loaded employee data:", employee);
+      
       if (employee) {
         setEmployeeData(employee);
         initializeLeaveFormWithEmployeeData(employee);
+      } else {
+        console.error("No employee data returned");
       }
     } catch (error) {
       console.error("Failed to load employee data:", error);
+    } finally {
+      setIsLoadingEmployeeData(false);
     }
   }
 
@@ -181,17 +211,72 @@ export default function EmployeeTimeline({
     loadEmployeeData();
   }, [employeeId]);
 
-  // Handle activity type change
+  // FIXED: Simplified handleTypeChange function
   const handleTypeChange = async (value: string) => {
+    console.log("Activity type selected:", value);
     setType(value);
+    
     if (value === "leave") {
+      // Ensure employee data is loaded before opening the modal
+      if (!employeeData) {
+        console.log("Loading employee data before opening leave modal...");
+        setIsLoadingEmployeeData(true);
+        await loadEmployeeData();
+      }
       await loadLeaveRequests();
-      await loadEmployeeData();
-      openLeaveModal();
+      console.log("Opening leave modal");
+      setIsLeaveModalOpen(true);
     } else if (value === "concurrency") {
-      await loadEmployeeData();
-      openConcurrencyModal();
+      // Ensure employee data is loaded before opening the modal
+      if (!employeeData) {
+        setIsLoadingEmployeeData(true);
+        await loadEmployeeData();
+      }
+      console.log("Opening concurrency modal");
+      setIsConcurrencyModalOpen(true);
     }
+  };
+
+  // FIXED: Enhanced leave modal open handler to ensure data is loaded
+  useEffect(() => {
+    if (isLeaveModalOpen && employeeData) {
+      console.log("Re-initializing form with employee data");
+      // Re-initialize form with latest employee data when modal opens
+      initializeLeaveFormWithEmployeeData(employeeData);
+    }
+  }, [isLeaveModalOpen, employeeData]);
+
+  // FIXED: Modal close handlers
+  const handleLeaveModalClose = () => {
+    console.log("Closing leave modal");
+    // Reset form but keep basic employee information
+    if (employeeData) {
+      initializeLeaveFormWithEmployeeData(employeeData);
+    }
+
+    // Only reset leave-specific fields
+    setLeaveForm(prev => ({
+      ...prev,
+      leaveType: "annual",
+      numberOfLeaveDays: 0,
+      startDate: "",
+      endDate: "",
+      locationDuringLeave: "",
+      reason: "",
+      dateOfRequest: new Date().toISOString().split('T')[0],
+      employeeSignature: "",
+    }));
+
+    setSelectedLeaveRequest(null);
+    setValidationErrors({});
+    setType("");
+    setIsLeaveModalOpen(false);
+  };
+
+  const handleConcurrencyModalClose = () => {
+    console.log("Closing concurrency modal");
+    setType("");
+    setIsConcurrencyModalOpen(false);
   };
 
   async function handleDelete(id: string) {
@@ -430,32 +515,7 @@ export default function EmployeeTimeline({
     });
 
     setType("");
-    closeConcurrencyModal();
-  };
-
-  const handleLeaveModalClose = () => {
-    // Reset form but keep basic employee information
-    if (employeeData) {
-      initializeLeaveFormWithEmployeeData(employeeData);
-    }
-
-    // Only reset leave-specific fields
-    setLeaveForm(prev => ({
-      ...prev,
-      leaveType: "annual",
-      numberOfLeaveDays: 0,
-      startDate: "",
-      endDate: "",
-      locationDuringLeave: "",
-      reason: "",
-      dateOfRequest: new Date().toISOString().split('T')[0],
-      employeeSignature: "",
-    }));
-
-    setSelectedLeaveRequest(null);
-    setValidationErrors({});
-    setType("");
-    closeLeaveModal();
+    setIsConcurrencyModalOpen(false);
   };
 
   // UI Helper Functions
@@ -669,34 +729,46 @@ export default function EmployeeTimeline({
     <div className="space-y-4 max-h-[80vh] overflow-y-auto p-2">
       <h3 className="text-lg font-semibold text-gray-800">Leave Request Form (Part A)</h3>
 
-      {/* Employee Information Summary */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-        <h4 className="font-medium text-blue-800 mb-2">Employee Information</h4>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <div>
-            <span className="text-blue-600">Name:</span> {leaveForm.employeeName}
+      {/* Show loading state if employee data is still loading */}
+      {isLoadingEmployeeData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 text-blue-800">
+            <Clock className="h-4 w-4 animate-spin" />
+            <span>Loading employee information...</span>
           </div>
-          <div>
-            <span className="text-blue-600">Employment #:</span> {leaveForm.employmentNumber}
-          </div>
-          <div>
-            <span className="text-blue-600">Position:</span> {leaveForm.employeePosition}
-          </div>
-          <div>
-            <span className="text-blue-600">Phone:</span> {leaveForm.phoneNumber}
-          </div>
-          {leaveForm.email && (
-            <div>
-              <span className="text-blue-600">Email:</span> {leaveForm.email}
-            </div>
-          )}
-          {leaveForm.currentAddress && (
-            <div className="col-span-2">
-              <span className="text-blue-600">Address:</span> {leaveForm.currentAddress}
-            </div>
-          )}
         </div>
-      </div>
+      )}
+
+      {/* Employee Information Summary */}
+      {employeeData?.employee_details && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <h4 className="font-medium text-blue-800 mb-2">Employee Information</h4>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div>
+              <span className="text-blue-600">Name:</span> {leaveForm.employeeName}
+            </div>
+            <div>
+              <span className="text-blue-600">Employment #:</span> {leaveForm.employmentNumber}
+            </div>
+            <div>
+              <span className="text-blue-600">Position:</span> {leaveForm.employeePosition}
+            </div>
+            <div>
+              <span className="text-blue-600">Phone:</span> {leaveForm.phoneNumber}
+            </div>
+            {leaveForm.email && (
+              <div>
+                <span className="text-blue-600">Email:</span> {leaveForm.email}
+              </div>
+            )}
+            {leaveForm.currentAddress && (
+              <div className="col-span-2">
+                <span className="text-blue-600">Address:</span> {leaveForm.currentAddress}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {renderLeaveRequestSelection()}
 
@@ -717,6 +789,7 @@ export default function EmployeeTimeline({
             className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
+            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
           />
           {renderError("employeeName")}
         </div>
@@ -732,6 +805,7 @@ export default function EmployeeTimeline({
             className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
+            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
           />
           {renderError("employmentNumber")}
         </div>
@@ -747,6 +821,7 @@ export default function EmployeeTimeline({
             className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
+            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
           />
           {renderError("employeePosition")}
         </div>
@@ -762,6 +837,7 @@ export default function EmployeeTimeline({
             className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
             required
             readOnly
+            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
           />
           {renderError("phoneNumber")}
         </div>
@@ -921,8 +997,9 @@ export default function EmployeeTimeline({
         <Button
           type="button"
           onClick={handleLeaveFormSubmit}
+          disabled={isLoadingEmployeeData}
         >
-          Submit Leave Request
+          {isLoadingEmployeeData ? "Loading..." : "Submit Leave Request"}
         </Button>
       </div>
     </div>
@@ -1050,7 +1127,7 @@ export default function EmployeeTimeline({
         )}
       </div>
 
-      {/* Leave Form Modal */}
+      {/* FIXED: Leave Form Modal - using direct state management */}
       <Modal
         isOpen={isLeaveModalOpen}
         onClose={handleLeaveModalClose}
@@ -1059,8 +1136,8 @@ export default function EmployeeTimeline({
         {renderLeaveForm()}
       </Modal>
 
-      {/* Concurrency Declaration Modal */}
-      <Dialog open={isConcurrencyModalOpen} onOpenChange={closeConcurrencyModal}>
+      {/* FIXED: Concurrency Declaration Modal */}
+      <Dialog open={isConcurrencyModalOpen} onOpenChange={setIsConcurrencyModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1068,17 +1145,14 @@ export default function EmployeeTimeline({
               Concurrency Declaration Form
             </DialogTitle>
             <DialogDescription>
-              Complete the concurrence declaration for {employeeData ? `${employeeData.first_name} ${employeeData.surname}` : 'this employee'}.
+              Complete the concurrence declaration for {employeeData?.employee_details ? `${employeeData.employee_details.other_names} ${employeeData.employee_details.surname}` : 'this employee'}.
             </DialogDescription>
           </DialogHeader>
           <ConcurrencyForm
             employee={employeeData}
             mode="create"
             onSuccess={handleConcurrencySuccess}
-            onCancel={() => {
-              closeConcurrencyModal();
-              setType("");
-            }}
+            onCancel={handleConcurrencyModalClose}
           />
         </DialogContent>
       </Dialog>
