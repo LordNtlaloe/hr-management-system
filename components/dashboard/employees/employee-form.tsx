@@ -48,7 +48,10 @@ export default function EmployeeFormWizard() {
           certificate_number: "",
           date_of_issue: "",
           present_nationality: ""
-        }
+        },
+        email: "",
+        telephone: "",
+        emergency_contact: ""
       },
       legal_info: {
         father_name: "",
@@ -71,7 +74,6 @@ export default function EmployeeFormWizard() {
         date_of_leaving: "",
         qualifications_obtained: ""
       },
-      // additional_qualifications: ""
     },
     mode: "onBlur",
   });
@@ -127,7 +129,14 @@ export default function EmployeeFormWizard() {
       }
 
       console.log("Submission Result:", result);
-      alert("Employee created successfully!");
+
+      // Show success message with employee number
+      if (result.success) {
+        alert(`Employee created successfully!\nEmployee Number: ${result.employee_number}\nUser account created with default password: user123`);
+      } else if (result.warning) {
+        alert(`Employee created with warning:\nEmployee Number: ${result.employee_number}\n${result.warning}`);
+      }
+
       methods.reset();
       setCurrentStep(1);
       setValidationErrors({});
@@ -178,20 +187,20 @@ export default function EmployeeFormWizard() {
                   <div key={step.id} className="flex flex-col items-center z-10">
                     <div
                       className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-medium border-2 transition-colors ${step.id === currentStep
-                          ? "border-blue-600 bg-blue-600 text-white"
-                          : step.id < currentStep
-                            ? "border-green-600 bg-green-600 text-white"
-                            : "border-gray-300 bg-white text-gray-500"
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : step.id < currentStep
+                          ? "border-green-600 bg-green-600 text-white"
+                          : "border-gray-300 bg-white text-gray-500"
                         }`}
                     >
                       {step.id < currentStep ? "✓" : step.id}
                     </div>
                     <span
                       className={`mt-2 text-xs text-center max-w-24 transition-colors ${step.id === currentStep
-                          ? "text-blue-600 font-medium"
-                          : step.id < currentStep
-                            ? "text-green-600"
-                            : "text-gray-500"
+                        ? "text-blue-600 font-medium"
+                        : step.id < currentStep
+                          ? "text-green-600"
+                          : "text-gray-500"
                         }`}
                     >
                       {step.name}
@@ -237,8 +246,8 @@ export default function EmployeeFormWizard() {
                 onClick={prev}
                 disabled={currentStep === 1}
                 className={`px-6 py-2 rounded-md font-medium transition-colors ${currentStep === 1
-                    ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                    : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
                   }`}
               >
                 ← Back
@@ -270,8 +279,8 @@ export default function EmployeeFormWizard() {
                   type="submit"
                   disabled={isSubmitting}
                   className={`px-6 py-2 rounded-md font-medium transition-colors ${isSubmitting
-                      ? "bg-gray-400 text-white cursor-not-allowed"
-                      : "bg-green-600 text-white hover:bg-green-700"
+                    ? "bg-gray-400 text-white cursor-not-allowed"
+                    : "bg-green-600 text-white hover:bg-green-700"
                     }`}
                 >
                   {isSubmitting ? "Submitting..." : "Submit Application"}

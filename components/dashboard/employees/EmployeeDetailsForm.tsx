@@ -235,8 +235,25 @@ export default function EmployeeDetailsForm() {
           </div>
         )}
 
-        {/* Sections 12-14 would continue here */}
+        {/* Email Section - Required for user account creation */}
         <div className="md:col-span-2">
+          <label className="block text-sm font-bold text-gray-700 mb-2">13. Email Address *</label>
+          <input
+            type="email"
+            {...register("employee_details.email")}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Enter email address for user account"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            This email will be used to create a user account with default password "user123"
+          </p>
+          {errors.employee_details?.email && (
+            <p className="text-red-500 text-sm mt-1">{errors.employee_details.email.message}</p>
+          )}
+        </div>
+
+        {/* Section 12: Telephone Number */}
+        <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">12. Telephone Number</label>
           <input
             type="tel"
@@ -246,17 +263,8 @@ export default function EmployeeDetailsForm() {
           />
         </div>
 
-        <div className="md:col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-2">13. Email Address</label>
-          <input
-            type="email"
-            {...register("employee_details.email")}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Enter email address"
-          />
-        </div>
-
-        <div className="md:col-span-2">
+        {/* Section 14: Emergency Contact */}
+        <div>
           <label className="block text-sm font-bold text-gray-700 mb-2">14. Emergency Contact</label>
           <input
             type="text"
