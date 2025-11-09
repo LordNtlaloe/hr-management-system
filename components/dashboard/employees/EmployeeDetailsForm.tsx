@@ -7,10 +7,18 @@ export default function EmployeeDetailsForm() {
   const {
     register,
     watch,
+    setValue,
     formState: { errors },
   } = useFormContext<EmployeeFormValues>();
 
   const isCitizen = watch("employee_details.is_citizen");
+
+  // Handle radio button change for boolean field
+  const handleCitizenshipChange = (value: boolean) => {
+    setValue("employee_details.is_citizen", value, {
+      shouldValidate: true,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -122,23 +130,27 @@ export default function EmployeeDetailsForm() {
             <label className="inline-flex items-center">
               <input
                 type="radio"
-                {...register("employee_details.is_citizen")}
-                value="true"
+                checked={isCitizen === true}
+                onChange={() => handleCitizenshipChange(true)}
                 className="text-blue-600 focus:ring-blue-500"
-                defaultChecked
               />
               <span className="ml-2">Citizen</span>
             </label>
             <label className="inline-flex items-center">
               <input
                 type="radio"
-                {...register("employee_details.is_citizen")}
-                value="false"
+                checked={isCitizen === false}
+                onChange={() => handleCitizenshipChange(false)}
                 className="text-blue-600 focus:ring-blue-500"
               />
               <span className="ml-2">Non-Citizen</span>
             </label>
           </div>
+          {/* Hidden input to maintain form registration */}
+          <input
+            type="hidden"
+            {...register("employee_details.is_citizen")}
+          />
         </div>
 
         {/* Conditional Fields based on Citizenship */}
