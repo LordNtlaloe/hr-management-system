@@ -2,23 +2,76 @@
 
 import { useFormContext } from "react-hook-form";
 import { EmployeeFormValues } from "@/schemas";
+import { useEffect } from "react";
 
 export default function EmployeeDetailsForm() {
   const {
     register,
     watch,
     setValue,
+    clearErrors,
+    trigger,
     formState: { errors },
   } = useFormContext<EmployeeFormValues>();
 
   const isCitizen = watch("employee_details.is_citizen");
 
   // Handle radio button change for boolean field
-  const handleCitizenshipChange = (value: boolean) => {
+  const handleCitizenshipChange = async (value: boolean) => {
     setValue("employee_details.is_citizen", value, {
       shouldValidate: true,
     });
+
+    // Clear conditional fields when switching citizenship status
+    if (value === true) {
+      // Clear non-citizen info when switching to citizen
+      setValue("employee_details.non_citizen_info", undefined, {
+        shouldValidate: false,
+      });
+      // Clear non-citizen errors
+      clearErrors([
+        "employee_details.non_citizen_info.certificate_number",
+        "employee_details.non_citizen_info.date_of_issue",
+        "employee_details.non_citizen_info.present_nationality"
+      ]);
+    } else {
+      // Clear citizen info when switching to non-citizen
+      setValue("employee_details.citizen_info", undefined, {
+        shouldValidate: false,
+      });
+      // Clear citizen errors
+      clearErrors([
+        "employee_details.citizen_info.chief_name",
+        "employee_details.citizen_info.district",
+        "employee_details.citizen_info.tax_id"
+      ]);
+    }
+
+    // Trigger validation after changing citizenship
+    setTimeout(() => {
+      trigger("employee_details.is_citizen");
+    }, 100);
   };
+
+  // Clear errors when switching citizenship
+  useEffect(() => {
+    if (isCitizen === true) {
+      clearErrors([
+        "employee_details.non_citizen_info.certificate_number",
+        "employee_details.non_citizen_info.date_of_issue",
+        "employee_details.non_citizen_info.present_nationality"
+      ]);
+    } else if (isCitizen === false) {
+      clearErrors([
+        "employee_details.citizen_info.chief_name",
+        "employee_details.citizen_info.district",
+        "employee_details.citizen_info.tax_id"
+      ]);
+    }
+  }, [isCitizen, clearErrors]);
+
+  // Check if there are any citizenship-related errors
+  const hasCitizenshipError = errors.employee_details?.is_citizen;
 
   return (
     <div className="space-y-6">
@@ -151,12 +204,16 @@ export default function EmployeeDetailsForm() {
             type="hidden"
             {...register("employee_details.is_citizen")}
           />
+          {/* Display citizenship validation error */}
+          {hasCitizenshipError && (
+            <p className="text-red-500 text-sm mt-1">{hasCitizenshipError.message}</p>
+          )}
         </div>
 
         {/* Conditional Fields based on Citizenship */}
         {isCitizen ? (
           <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 bg-blue-50 p-4 rounded-lg">
-            <h3 className="md:col-span-3 text-lg font-bold text-blue-800 mb-2">Citizen Information</h3>
+            <h3 className="md:col-span-3 text-lg font-bold text-blue-800 mb-2">Citizen Information *</h3>
 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">9. Chief's Name *</label>
@@ -199,7 +256,7 @@ export default function EmployeeDetailsForm() {
           </div>
         ) : (
           <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 bg-yellow-50 p-4 rounded-lg">
-            <h3 className="md:col-span-3 text-lg font-bold text-yellow-800 mb-2">Non-Citizen Information</h3>
+            <h3 className="md:col-span-3 text-lg font-bold text-yellow-800 mb-2">Non-Citizen Information *</h3>
 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">9. Certificate Number *</label>

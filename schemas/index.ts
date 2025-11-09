@@ -272,6 +272,9 @@ export const TerminationSchema = z.object({
 // ----------------------
 // Section 1-14: Personal Details Schema
 // ----------------------
+// ----------------------
+// Section 1-14: Personal Details Schema - FIXED
+// ----------------------
 export const EmployeeDetailsSchema = z
   .object({
     // Section 1
@@ -324,12 +327,37 @@ export const EmployeeDetailsSchema = z
     profile_picture: z.string().optional(),
   })
   .refine(
-    (data) =>
-      (data.is_citizen && data.citizen_info) ||
-      (!data.is_citizen && data.non_citizen_info),
+    (data) => {
+      if (data.is_citizen === true) {
+        return (
+          data.citizen_info !== undefined && data.non_citizen_info === undefined
+        );
+      } else if (data.is_citizen === false) {
+        return (
+          data.non_citizen_info !== undefined && data.citizen_info === undefined
+        );
+      }
+      return true;
+    },
     {
-      message: "Citizen or non-citizen details must be provided",
+      message:
+        "Must provide citizen information for citizens or non-citizen information for non-citizens, but not both",
       path: ["citizenship"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.is_citizen === true) {
+        return data.citizen_info !== undefined;
+      } else if (data.is_citizen === false) {
+        return data.non_citizen_info !== undefined;
+      }
+      return true;
+    },
+    {
+      message:
+        "Citizen information is required for citizens, non-citizen information is required for non-citizens",
+      path: ["citizen_info"],
     }
   );
 
