@@ -11,61 +11,67 @@ export default function EmployeeDetailsForm() {
     setValue,
     clearErrors,
     trigger,
+    unregister,
     formState: { errors },
   } = useFormContext<EmployeeFormValues>();
 
   const isCitizen = watch("employee_details.is_citizen");
 
   // Handle radio button change for boolean field
+ // Handle radio button change for boolean field
   const handleCitizenshipChange = async (value: boolean) => {
     setValue("employee_details.is_citizen", value, {
-      shouldValidate: true,
+      shouldValidate: false,
     });
 
     // Clear conditional fields when switching citizenship status
     if (value === true) {
-      // Clear non-citizen info when switching to citizen
-      setValue("employee_details.non_citizen_info", undefined, {
-        shouldValidate: false,
-      });
-      // Clear non-citizen errors
+      // Clear and unregister non-citizen fields
+      setValue("employee_details.non_citizen_info", undefined);
+      unregister("employee_details.non_citizen_info.certificate_number");
+      unregister("employee_details.non_citizen_info.date_of_issue");
+      unregister("employee_details.non_citizen_info.present_nationality");
+      unregister("employee_details.non_citizen_info");
+      
+      // Clear errors
       clearErrors([
         "employee_details.non_citizen_info.certificate_number",
         "employee_details.non_citizen_info.date_of_issue",
-        "employee_details.non_citizen_info.present_nationality"
+        "employee_details.non_citizen_info.present_nationality",
+        "employee_details.non_citizen_info"
       ]);
     } else {
-      // Clear citizen info when switching to non-citizen
-      setValue("employee_details.citizen_info", undefined, {
-        shouldValidate: false,
-      });
-      // Clear citizen errors
+      // Clear and unregister citizen fields
+      setValue("employee_details.citizen_info", undefined);
+      unregister("employee_details.citizen_info.chief_name");
+      unregister("employee_details.citizen_info.district");
+      unregister("employee_details.citizen_info.tax_id");
+      unregister("employee_details.citizen_info");
+      
+      // Clear errors
       clearErrors([
         "employee_details.citizen_info.chief_name",
         "employee_details.citizen_info.district",
-        "employee_details.citizen_info.tax_id"
+        "employee_details.citizen_info.tax_id",
+        "employee_details.citizen_info"
       ]);
     }
-
-    // Trigger validation after changing citizenship
-    setTimeout(() => {
-      trigger("employee_details.is_citizen");
-    }, 100);
   };
-
   // Clear errors when switching citizenship
   useEffect(() => {
     if (isCitizen === true) {
       clearErrors([
         "employee_details.non_citizen_info.certificate_number",
         "employee_details.non_citizen_info.date_of_issue",
-        "employee_details.non_citizen_info.present_nationality"
+        "employee_details.non_citizen_info.present_nationality",
+        "employee_details.non_citizen_info"
       ]);
     } else if (isCitizen === false) {
       clearErrors([
         "employee_details.citizen_info.chief_name",
         "employee_details.citizen_info.district",
-        "employee_details.citizen_info.tax_id"
+        "employee_details.citizen_info.tax_id",
+        "employee_details.citizen_info"
       ]);
     }
   }, [isCitizen, clearErrors]);
@@ -211,7 +217,7 @@ export default function EmployeeDetailsForm() {
         </div>
 
         {/* Conditional Fields based on Citizenship */}
-        {isCitizen ? (
+        {isCitizen === true && (
           <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 bg-blue-50 p-4 rounded-lg">
             <h3 className="md:col-span-3 text-lg font-bold text-blue-800 mb-2">Citizen Information *</h3>
 
@@ -254,7 +260,9 @@ export default function EmployeeDetailsForm() {
               )}
             </div>
           </div>
-        ) : (
+        )}
+
+        {isCitizen === false && (
           <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 bg-yellow-50 p-4 rounded-lg">
             <h3 className="md:col-span-3 text-lg font-bold text-yellow-800 mb-2">Non-Citizen Information *</h3>
 

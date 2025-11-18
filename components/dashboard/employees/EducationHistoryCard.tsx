@@ -24,10 +24,18 @@ export default function EducationHistoryCard({ education }: Props) {
             <p className="text-gray-800 dark:text-gray-300">
               Qualification: {entry.qualification}
             </p>
-            <p className="text-sm text-gray-600">
-              {entry.qualification_start_date} -{" "}
-              {entry.qualification_completion_date}
-            </p>
+            {/* Only show completion date if it exists */}
+            {entry.qualification_completion_date && (
+              <p className="text-sm text-gray-600">
+                Completed: {entry.qualification_completion_date}
+              </p>
+            )}
+            {/* Show date range if both start and completion dates exist */}
+            {entry.qualification_start_date && entry.qualification_completion_date && (
+              <p className="text-sm text-gray-600">
+                {entry.qualification_start_date} - {entry.qualification_completion_date}
+              </p>
+            )}
             {entry.additional_skills && entry.additional_skills.length > 0 && (
               <p className="text-sm text-gray-600">
                 Skills: {entry.additional_skills.join(", ")}

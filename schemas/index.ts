@@ -326,41 +326,55 @@ export const EmployeeDetailsSchema = z
     emergency_contact: z.string().optional(),
     profile_picture: z.string().optional(),
   })
-  .refine(
-    (data) => {
-      if (data.is_citizen === true) {
-        return (
-          data.citizen_info !== undefined && data.non_citizen_info === undefined
-        );
-      } else if (data.is_citizen === false) {
-        return (
-          data.non_citizen_info !== undefined && data.citizen_info === undefined
-        );
+  .superRefine((data, ctx) => {
+    // If citizen, validate citizen_info is present and non_citizen_info is not
+    if (data.is_citizen === true) {
+      if (!data.citizen_info) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Citizen information is required for citizens",
+          path: ["citizen_info"],
+        });
       }
-      return true;
-    },
-    {
-      message:
-        "Must provide citizen information for citizens or non-citizen information for non-citizens, but not both",
-      path: ["citizenship"],
-    }
-  )
-  .refine(
-    (data) => {
-      if (data.is_citizen === true) {
-        return data.citizen_info !== undefined;
-      } else if (data.is_citizen === false) {
-        return data.non_citizen_info !== undefined;
+      // Check if non_citizen_info has any values
+      if (data.non_citizen_info && Object.keys(data.non_citizen_info).length > 0) {
+        const hasNonCitizenData = Object.values(data.non_citizen_info).some(
+          val => val !== undefined && val !== null && val !== ""
+        );
+        if (hasNonCitizenData) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Cannot provide non-citizen information when citizenship status is Citizen",
+            path: ["is_citizen"],
+          });
+        }
       }
-      return true;
-    },
-    {
-      message:
-        "Citizen information is required for citizens, non-citizen information is required for non-citizens",
-      path: ["citizen_info"],
     }
-  );
-
+    
+    // If non-citizen, validate non_citizen_info is present and citizen_info is not
+    if (data.is_citizen === false) {
+      if (!data.non_citizen_info) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Non-citizen information is required for non-citizens",
+          path: ["non_citizen_info"],
+        });
+      }
+      // Check if citizen_info has any values
+      if (data.citizen_info && Object.keys(data.citizen_info).length > 0) {
+        const hasCitizenData = Object.values(data.citizen_info).some(
+          val => val !== undefined && val !== null && val !== ""
+        );
+        if (hasCitizenData) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Cannot provide citizen information when citizenship status is Non-Citizen",
+            path: ["is_citizen"],
+          });
+        }
+      }
+    }
+  });
 // ----------------------
 // Legal Information Schema (Sections would be numbered based on full form)
 // ----------------------
@@ -414,6 +428,9 @@ export const LegalInfoSchema = z
 // ----------------------
 // Section 15: Education History Schema - SCHOOLS ATTENDED
 // ----------------------
+// ----------------------
+// Section 15: Education History Schema - SCHOOLS ATTENDED (FIXED)
+// ----------------------
 export const EducationEntrySchema = z.object({
   // Section 15 fields
   school_name: z.string().min(1, "School name is required"),
@@ -422,10 +439,8 @@ export const EducationEntrySchema = z.object({
 
   // Additional education details
   qualification: z.string().min(1, "Qualification is required"),
-  qualification_start_date: z.string().min(1, "Start date is required"),
-  qualification_completion_date: z
-    .string()
-    .min(1, "Completion date is required"),
+  qualification_start_date: z.string().optional(), // CHANGED: Made optional since it's not in the form
+  qualification_completion_date: z.string().optional(), // CHANGED: Made optional for consistency
   additional_skills: z.array(z.string()).optional(),
 });
 
@@ -451,11 +466,12 @@ export const PostSecondarySchema = z.object({
 });
 
 // ----------------------
-// Section 18: ADDITIONAL QUALIFICATIONS Schema
+// Section 18: ADDITIONAL QUALIFICATIONS Schema (FIXED)
 // ----------------------
 export const AdditionalQualificationsSchema = z.object({
   qualifications: z.string().optional(),
 });
+
 
 // ----------------------
 // Employment History Schema (Sections 19-29)
