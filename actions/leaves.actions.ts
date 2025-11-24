@@ -68,7 +68,113 @@ const normalizeObjectId = (id: string | ObjectId): ObjectId => {
   throw new Error(`Invalid ObjectId: ${id}`);
 };
 
-// ===================== CRUD =====================
+// 🔹 Get Employee Leave Requests - IMPROVED VERSION
+export const getEmployeeLeaveRequests = async (
+  employeeId: string,
+  status?: string
+) => {
+  if (!dbConnection) await init();
+
+  try {
+    const collection = await database?.collection("leave_requests");
+
+    console.log("🔍 Fetching leave requests for employeeId:", employeeId);
+    console.log("📊 Status filter:", status || "all");
+
+    // Build filter condition
+    const filter: any = {};
+
+    // Handle employeeId - try multiple approaches
+    try {
+      // First try to normalize as ObjectId
+      filter.employeeId = normalizeObjectId(employeeId);
+      console.log("✅ Using normalized ObjectId for employeeId");
+    } catch (error) {
+      console.log("❌ Could not normalize as ObjectId, using string employeeId");
+      filter.employeeId = employeeId;
+    }
+
+    // Add status filter if provided
+    if (status && status !== "all") {
+      filter.status = status;
+    }
+
+    console.log("🔎 Final filter:", JSON.stringify(filter, null, 2));
+
+    const leaves = await collection
+      .aggregate([
+        { $match: filter },
+        {
+          $addFields: {
+            // Handle both string and ObjectId employeeId for lookup
+            employeeObjectId: {
+              $cond: {
+                if: { $eq: [{ $type: "$employeeId" }, "string"] },
+                then: {
+                  $cond: {
+                    if: { $eq: [{ $strLenCP: "$employeeId" }, 24] },
+                    then: { $toObjectId: "$employeeId" },
+                    else: null
+                  }
+                },
+                else: "$employeeId",
+              },
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: "employees",
+            localField: "employeeObjectId",
+            foreignField: "_id",
+            as: "employeeData",
+          },
+        },
+        {
+          $addFields: {
+            // Use the employee data if found, otherwise keep original employeeId
+            employeeId: {
+              $cond: {
+                if: { $gt: [{ $size: "$employeeData" }, 0] },
+                then: { $arrayElemAt: ["$employeeData", 0] },
+                else: "$employeeId"
+              }
+            },
+          },
+        },
+        {
+          $project: {
+            employeeData: 0,
+            employeeObjectId: 0,
+          },
+        },
+        { $sort: { appliedDate: -1 } },
+      ])
+      .toArray();
+
+    console.log(`✅ Found ${leaves.length} leave requests for employee ${employeeId}`);
+
+    const serializedLeaves = serializeDocument(leaves);
+
+    // Log first leave request for debugging
+    if (serializedLeaves.length > 0) {
+      console.log("📄 Sample leave request:", {
+        id: serializedLeaves[0]._id,
+        employeeId: serializedLeaves[0].employeeId,
+        status: serializedLeaves[0].status,
+        leaveType: serializedLeaves[0].leaveType,
+        startDate: serializedLeaves[0].startDate,
+        endDate: serializedLeaves[0].endDate,
+      });
+    }
+
+    return serializedLeaves;
+  } catch (error: any) {
+    console.error("❌ Error fetching employee leave requests:", error.message);
+    console.error("Stack trace:", error.stack);
+    return [];
+  }
+};
 
 // 🔹 Create Leave Request with Part A Data
 export const createLeaveRequest = async (
@@ -101,9 +207,16 @@ export const createLeaveRequest = async (
     };
 
     const result = await collection.insertOne(leave);
+
+    console.log("✅ Leave request created:", {
+      insertedId: result.insertedId.toString(),
+      employeeId: employeeIdObj.toString(),
+      leaveType: leaveData.leaveType
+    });
+
     return { insertedId: result.insertedId.toString(), success: true };
   } catch (error: any) {
-    console.error("Error creating leave request:", error.message);
+    console.error("❌ Error creating leave request:", error.message);
     return { error: error.message };
   }
 };
@@ -129,9 +242,15 @@ export const updateLeaveRequestWithPartB = async (
         },
       }
     );
+
+    console.log("✅ Leave request updated with Part B:", {
+      id,
+      modifiedCount: result.modifiedCount
+    });
+
     return { modifiedCount: result.modifiedCount, success: true };
   } catch (error: any) {
-    console.error("Error updating leave request with Part B:", error.message);
+    console.error("❌ Error updating leave request with Part B:", error.message);
     return { error: error.message };
   }
 };
@@ -188,7 +307,7 @@ export const getLeaveRequestById = async (id: string) => {
 
     return serializeDocument(leave[0] || null);
   } catch (error: any) {
-    console.error("Error fetching leave request:", error.message);
+    console.error("❌ Error fetching leave request:", error.message);
     return { error: error.message };
   }
 };
@@ -204,7 +323,7 @@ export const updateLeaveRequest = async (id: string, updateData: any) => {
     );
     return { modifiedCount: result.modifiedCount, success: true };
   } catch (error: any) {
-    console.error("Error updating leave request:", error.message);
+    console.error("❌ Error updating leave request:", error.message);
     return { error: error.message };
   }
 };
@@ -248,7 +367,7 @@ export const approveLeaveRequest = async (
 
     return { modifiedCount: result.modifiedCount, success: true };
   } catch (error: any) {
-    console.error("Error approving leave request:", error.message);
+    console.error("❌ Error approving leave request:", error.message);
     return { error: error.message };
   }
 };
@@ -276,71 +395,8 @@ export const rejectLeaveRequest = async (
     );
     return { modifiedCount: result.modifiedCount, success: true };
   } catch (error: any) {
-    console.error("Error rejecting leave request:", error.message);
+    console.error("❌ Error rejecting leave request:", error.message);
     return { error: error.message };
-  }
-};
-
-// 🔹 Get Employee Leave Requests
-export const getEmployeeLeaveRequests = async (
-  employeeId: string,
-  status?: string
-) => {
-  if (!dbConnection) await init();
-  try {
-    const collection = await database?.collection("leave_requests");
-    const filter: any = {};
-
-    try {
-      filter.employeeId = normalizeObjectId(employeeId);
-    } catch (error) {
-      console.error("Error normalizing employeeId:", error);
-      filter.employeeId = employeeId;
-    }
-
-    if (status) filter.status = status;
-
-    const leaves = await collection
-      .aggregate([
-        { $match: filter },
-        {
-          $addFields: {
-            employeeObjectId: {
-              $cond: {
-                if: { $eq: [{ $type: "$employeeId" }, "string"] },
-                then: { $toObjectId: "$employeeId" },
-                else: "$employeeId",
-              },
-            },
-          },
-        },
-        {
-          $lookup: {
-            from: "employees",
-            localField: "employeeObjectId",
-            foreignField: "_id",
-            as: "employeeData",
-          },
-        },
-        {
-          $addFields: {
-            employeeId: { $arrayElemAt: ["$employeeData", 0] },
-          },
-        },
-        {
-          $project: {
-            employeeData: 0,
-            employeeObjectId: 0,
-          },
-        },
-        { $sort: { appliedDate: -1 } },
-      ])
-      .toArray();
-
-    return serializeDocument(leaves);
-  } catch (error: any) {
-    console.error("Error fetching employee leave requests:", error.message);
-    return [];
   }
 };
 
@@ -397,10 +453,10 @@ export const getAllLeaveRequests = async () => {
       ])
       .toArray();
 
-    console.log(`Found ${leaves.length} leaves`);
+    console.log(`✅ Found ${leaves.length} total leaves`);
     return serializeDocument(leaves);
   } catch (error: any) {
-    console.error("Error fetching leave requests:", error.message);
+    console.error("❌ Error fetching leave requests:", error.message);
     return [];
   }
 };
@@ -448,9 +504,10 @@ export const getPendingLeaveRequests = async () => {
       ])
       .toArray();
 
+    console.log(`✅ Found ${leaves.length} pending leave requests`);
     return serializeDocument(leaves);
   } catch (error: any) {
-    console.error("Error fetching pending leave requests:", error.message);
+    console.error("❌ Error fetching pending leave requests:", error.message);
     return [];
   }
 };
@@ -470,7 +527,7 @@ export const createLeaveBalance = async (balanceData: any) => {
     const result = await collection.insertOne(balance);
     return { insertedId: result.insertedId.toString(), success: true };
   } catch (error: any) {
-    console.error("Error creating leave balance:", error.message);
+    console.error("❌ Error creating leave balance:", error.message);
     return { error: error.message };
   }
 };
@@ -484,14 +541,14 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
     try {
       query.employeeId = normalizeObjectId(employeeId);
     } catch (error) {
-      console.error("Error normalizing employeeId for balance query:", error);
+      console.error("❌ Error normalizing employeeId for balance query:", error);
       query.employeeId = employeeId;
     }
 
     const balances = await collection.find(query).toArray();
     return serializeDocument(balances);
   } catch (error: any) {
-    console.error("Error fetching employee leave balance:", error.message);
+    console.error("❌ Error fetching employee leave balance:", error.message);
     return [];
   }
 };
@@ -519,7 +576,7 @@ const updateLeaveBalance = async (
 
     return { success: true };
   } catch (error: any) {
-    console.error("Error updating leave balance:", error.message);
+    console.error("❌ Error updating leave balance:", error.message);
     throw error;
   }
 };
@@ -539,7 +596,7 @@ export const resetLeaveBalances = async (year: number) => {
     );
     return { modifiedCount: result.modifiedCount, success: true };
   } catch (error: any) {
-    console.error("Error resetting leave balances:", error.message);
+    console.error("❌ Error resetting leave balances:", error.message);
     return { error: error.message };
   }
 };
@@ -606,7 +663,7 @@ export const getLeaveReport = async (
 
     return serializeDocument(await collection.aggregate(pipeline).toArray());
   } catch (error: any) {
-    console.error("Error generating leave report:", error.message);
+    console.error("❌ Error generating leave report:", error.message);
     return { error: error.message };
   }
 };
@@ -642,7 +699,7 @@ export const getEmployeeStatusCounts = async () => {
       total: employees.length,
     };
   } catch (error: any) {
-    console.error("Error fetching employee status counts:", error.message);
+    console.error("❌ Error fetching employee status counts:", error.message);
     return { error: error.message };
   }
 };
@@ -687,7 +744,7 @@ export const getMonthlyLeaveRequests = async (year: number) => {
 
     return monthlyData;
   } catch (error: any) {
-    console.error("Error fetching monthly leave requests:", error.message);
+    console.error("❌ Error fetching monthly leave requests:", error.message);
     return { error: error.message };
   }
 };
@@ -706,7 +763,7 @@ export const getEmployeeLeaveUtilization = async (
     try {
       queryEmployeeId = normalizeObjectId(employeeId);
     } catch (error) {
-      console.error("Error normalizing employeeId:", error);
+      console.error("❌ Error normalizing employeeId:", error);
       queryEmployeeId = employeeId;
     }
 
@@ -865,13 +922,13 @@ export const getEmployeeLeaveUtilization = async (
         averageDaysPerRequest:
           summary.totalRequests > 0
             ? parseFloat(
-                (summary.totalDaysUsed / summary.totalRequests).toFixed(2)
-              )
+              (summary.totalDaysUsed / summary.totalRequests).toFixed(2)
+            )
             : 0,
       },
     });
   } catch (error: any) {
-    console.error("Error fetching employee leave utilization:", error.message);
+    console.error("❌ Error fetching employee leave utilization:", error.message);
     return { error: error.message };
   }
 };
