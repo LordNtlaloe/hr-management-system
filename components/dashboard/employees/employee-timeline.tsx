@@ -1,21 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  addEmployeeActivity,
-  getEmployeeActivities,
-  deleteEmployeeActivity,
-} from "@/actions/employee.activities.actions";
-import {
-  getEmployeeLeaveRequests,
-  createLeaveRequest,
-  updateLeaveRequestWithPartB
-} from "@/actions/leaves.actions";
-import { getEmployeeById } from "@/actions/employee.actions";
-
+import React, { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Select,
   SelectTrigger,
@@ -32,21 +22,36 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Modal } from "@/components/ui/modal";
-import { useModal } from "@/hooks/use-modal";
 import ConcurrencyForm from "@/components/dashboard/employees/concurrence-form";
-import { Plus, FileText, AlertCircle, CalendarDays, CheckCircle, XCircle, Clock } from "lucide-react";
-import { PartASchema, PartBSchema, type PartAData, type PartBData } from "@/schemas";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Plus,
+  FileText,
+  AlertCircle,
+  CalendarDays,
+  CheckCircle,
+  XCircle,
+  Clock,
+  User,
+  Calendar,
+  MapPin,
+  Mail
+} from "lucide-react";
+import {
+  getAllLeaveRequests,
+  updateLeaveRequest,
+  createLeaveRequest,
+  updateLeaveRequestWithPartB,
+} from "@/actions/leaves.actions";
+import {
+  addEmployeeActivity,
+  getEmployeeActivities,
+  deleteEmployeeActivity,
+} from "@/actions/employee.activities.actions";
+import { getEmployeeById } from "@/actions/employee.actions";
+import { toast } from "sonner";
 
-interface Activity {
-  _id: string;
-  type: string;
-  description: string;
-  date: string;
-  partBData?: PartBData;
-  status?: "pending" | "approved" | "rejected";
-}
-
-interface LeaveRequest {
+interface LeaveWithEmployee {
   _id: string;
   leaveType: string;
   startDate: string;
@@ -54,366 +59,227 @@ interface LeaveRequest {
   days: number;
   reason?: string;
   status: string;
-  employeeId?: any;
-  partAData?: PartAData;
-  partBData?: PartBData;
-}
-
-interface EmployeeData {
-  employee_details?: {
-    surname: string;
-    other_names: string;
-    employment_number?: string;
-    position?: string;
-    phone?: string;
-    email?: string;
-    current_address?: string;
-  };
-  legal_info?: any;
-  education_history?: any;
-  employment_history?: any;
-  references?: any;
-}
-
-export default function EmployeeTimeline({
-  employeeId,
-}: {
+  appliedDate: string;
+  approvedDate?: string;
+  rejectedDate?: string;
+  rejectionReason?: string;
+  approverComments?: string;
   employeeId: string;
-}) {
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
-  const [type, setType] = useState("");
-  const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
-  const [isLoadingEmployeeData, setIsLoadingEmployeeData] = useState(false);
+  employeeDetails: {
+    name?: string;
+    email?: string;
+    avatar?: string;
+    employment_number?: string;
+    phone?: string;
+    surname?: string;
+    other_names?: string;
+    position?: string;
+  };
+}
 
-  // FIXED: Simplified modal state - using useState instead of useModal hook
+interface Activity {
+  _id: string;
+  type: string;
+  description: string;
+  date: string;
+  partBData?: any;
+  status?: "pending" | "approved" | "rejected";
+}
+
+interface PartAData {
+  employeeName: string;
+  employmentNumber: string;
+  employeePosition: string;
+  numberOfLeaveDays: number;
+  startDate: Date;
+  endDate: Date;
+  locationDuringLeave: string;
+  phoneNumber: string;
+  dateOfRequest: Date;
+  employeeSignature: string;
+}
+
+interface PartBData {
+  annualLeaveDays: number;
+  deductedDays: number;
+  remainingLeaveDays: number;
+  dateOfApproval?: Date;
+  hrSignature: string;
+}
+
+export default function LeaveManagementPage() {
+  const { data: session } = useSession();
+  const userRole = session?.user?.role;
+  const isAdmin = userRole === "HR" || userRole === "Admin";
+
+  const [processing, setProcessing] = useState<string | null>(null);
+  const [pendingLeaves, setPendingLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [approvedLeaves, setApprovedLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [rejectedLeaves, setRejectedLeaves] = useState<LeaveWithEmployee[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+
+  // State for modals
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [isConcurrencyModalOpen, setIsConcurrencyModalOpen] = useState(false);
+  const [isRejectionModalOpen, setIsRejectionModalOpen] = useState(false);
+  const [selectedRequestForAction, setSelectedRequestForAction] = useState<LeaveWithEmployee | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
 
-  // Part B Dialog state
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
-  const [isPartBDialogOpen, setIsPartBDialogOpen] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-
-  // Leave Form state
+  // State for forms
+  const [type, setType] = useState("");
   const [leaveForm, setLeaveForm] = useState({
-    // Personal Information (from employee form)
     employeeName: "",
     employmentNumber: "",
     employeePosition: "",
     email: "",
     phoneNumber: "",
     currentAddress: "",
-
-    // Leave Specific Information
     leaveType: "annual",
     numberOfLeaveDays: 0,
     startDate: "",
     endDate: "",
     locationDuringLeave: "",
     reason: "",
-
-    // Dates and Signature
     dateOfRequest: new Date().toISOString().split('T')[0],
     employeeSignature: "",
   });
 
-  // Part B Form state
-  const [partBForm, setPartBForm] = useState<PartBData>({
-    annualLeaveDays: 21,
-    deductedDays: 0,
-    remainingLeaveDays: 21,
-    dateOfApproval: undefined,
-    hrSignature: "",
-  });
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
-  const [selectedLeaveRequest, setSelectedLeaveRequest] = useState<LeaveRequest | null>(null);
-
-  // Initialize leave form with correct employee data structure
-  const initializeLeaveFormWithEmployeeData = (employee: EmployeeData) => {
-    if (!employee?.employee_details) {
-      console.log("No employee details found");
-      return;
-    }
-
-    const employeeDetails = employee.employee_details;
-    const employeeName = `${employeeDetails.other_names || ''} ${employeeDetails.surname || ''}`.trim();
-    const employmentNumber = employeeDetails.employment_number || "";
-    const employeePosition = employeeDetails.position || "";
-    const phoneNumber = employeeDetails.phone || "";
-    const email = employeeDetails.email || "";
-    const currentAddress = employeeDetails.current_address || "";
-
-    console.log("Initializing form with employee data:", {
-      employeeName,
-      employmentNumber,
-      employeePosition,
-      phoneNumber,
-      email,
-      currentAddress
-    });
-
-    setLeaveForm(prev => ({
-      ...prev,
-      employeeName,
-      employmentNumber,
-      employeePosition,
-      phoneNumber,
-      email,
-      currentAddress,
-    }));
-  };
-
-  // Load data
-  async function loadEmployeeData() {
+  // Load all leaves
+  async function loadLeaves() {
     try {
-      setIsLoadingEmployeeData(true);
-      console.log("Loading employee data for ID:", employeeId);
-      const employee = await getEmployeeById(employeeId);
-      console.log("Loaded employee data:", employee);
-      
-      if (employee) {
-        setEmployeeData(employee);
-        initializeLeaveFormWithEmployeeData(employee);
-      } else {
-        console.error("No employee data returned");
+      const leaves = await getAllLeaveRequests();
+      if (Array.isArray(leaves)) {
+        const pending = leaves.filter(leave => leave.status === 'pending');
+        const approved = leaves.filter(leave => leave.status === 'approved');
+        const rejected = leaves.filter(leave => leave.status === 'rejected');
+
+        setPendingLeaves(pending);
+        setApprovedLeaves(approved);
+        setRejectedLeaves(rejected);
       }
-    } catch (error) {
-      console.error("Failed to load employee data:", error);
-    } finally {
-      setIsLoadingEmployeeData(false);
-    }
-  }
-
-  async function loadActivities() {
-    const data = await getEmployeeActivities(employeeId);
-    if (!("error" in data)) setActivities(data as Activity[]);
-  }
-
-  async function loadLeaveRequests() {
-    try {
-      const requests = await getEmployeeLeaveRequests(employeeId);
-      if (Array.isArray(requests)) {
-        const filteredRequests = requests.filter(request =>
-          request.status === 'pending' || request.status === 'approved'
-        );
-        setLeaveRequests(filteredRequests);
-      }
-    } catch (error) {
-      console.error("Failed to load leave requests:", error);
-    }
-  }
-
-  useEffect(() => {
-    loadActivities();
-    loadLeaveRequests();
-    loadEmployeeData();
-  }, [employeeId]);
-
-  // FIXED: Simplified handleTypeChange function
-  const handleTypeChange = async (value: string) => {
-    console.log("Activity type selected:", value);
-    setType(value);
-    
-    if (value === "leave") {
-      // Ensure employee data is loaded before opening the modal
-      if (!employeeData) {
-        console.log("Loading employee data before opening leave modal...");
-        setIsLoadingEmployeeData(true);
-        await loadEmployeeData();
-      }
-      await loadLeaveRequests();
-      console.log("Opening leave modal");
-      setIsLeaveModalOpen(true);
-    } else if (value === "concurrency") {
-      // Ensure employee data is loaded before opening the modal
-      if (!employeeData) {
-        setIsLoadingEmployeeData(true);
-        await loadEmployeeData();
-      }
-      console.log("Opening concurrency modal");
-      setIsConcurrencyModalOpen(true);
-    }
-  };
-
-  // FIXED: Enhanced leave modal open handler to ensure data is loaded
-  useEffect(() => {
-    if (isLeaveModalOpen && employeeData) {
-      console.log("Re-initializing form with employee data");
-      // Re-initialize form with latest employee data when modal opens
-      initializeLeaveFormWithEmployeeData(employeeData);
-    }
-  }, [isLeaveModalOpen, employeeData]);
-
-  // FIXED: Modal close handlers
-  const handleLeaveModalClose = () => {
-    console.log("Closing leave modal");
-    // Reset form but keep basic employee information
-    if (employeeData) {
-      initializeLeaveFormWithEmployeeData(employeeData);
-    }
-
-    // Only reset leave-specific fields
-    setLeaveForm(prev => ({
-      ...prev,
-      leaveType: "annual",
-      numberOfLeaveDays: 0,
-      startDate: "",
-      endDate: "",
-      locationDuringLeave: "",
-      reason: "",
-      dateOfRequest: new Date().toISOString().split('T')[0],
-      employeeSignature: "",
-    }));
-
-    setSelectedLeaveRequest(null);
-    setValidationErrors({});
-    setType("");
-    setIsLeaveModalOpen(false);
-  };
-
-  const handleConcurrencyModalClose = () => {
-    console.log("Closing concurrency modal");
-    setType("");
-    setIsConcurrencyModalOpen(false);
-  };
-
-  async function handleDelete(id: string) {
-    await deleteEmployeeActivity(id);
-    await loadActivities();
-  }
-
-  // Part B Functions
-  const handleViewPartB = (activity: Activity) => {
-    setSelectedActivity(activity);
-    if (activity.partBData) {
-      setPartBForm(activity.partBData);
-    }
-    setIsEditMode(false);
-    setIsPartBDialogOpen(true);
-  };
-
-  const handleEditPartB = async (activity: Activity) => {
-    setSelectedActivity(activity);
-
-    // Find the corresponding leave request to get the actual days
-    const leaveRequest = leaveRequests.find(req =>
-      activity.description.includes(req._id) ||
-      activity.description.includes(`Leave Request: ${req.leaveType}`)
-    );
-
-    if (activity.partBData) {
-      setPartBForm(activity.partBData);
-    } else {
-      const extractedDays = leaveRequest?.days || extractDaysFromDescription(activity.description);
-      setPartBForm({
-        annualLeaveDays: 21,
-        deductedDays: extractedDays,
-        remainingLeaveDays: 21 - extractedDays,
-        dateOfApproval: new Date(),
-        hrSignature: "",
+    } catch (e) {
+      console.error("Failed to load leaves:", e);
+      toast("Error", {
+        description: "Failed to load leave requests",
       });
     }
-    setIsEditMode(true);
-    setIsPartBDialogOpen(true);
-  };
+  }
 
-  const extractDaysFromDescription = (description: string): number => {
-    const match = description.match(/(\d+)\s+days/);
-    return match ? parseInt(match[1]) : 0;
-  };
-
-  const handlePartBFormChange = (field: keyof PartBData, value: any) => {
-    setPartBForm(prev => {
-      const updated = { ...prev, [field]: value };
-
-      if (field === "deductedDays" || field === "annualLeaveDays") {
-        const annual = field === "annualLeaveDays" ? value : prev.annualLeaveDays || 21;
-        const deducted = field === "deductedDays" ? value : prev.deductedDays || 0;
-        updated.remainingLeaveDays = annual - deducted;
-      }
-
-      return updated;
-    });
-  };
-
-  const handleSavePartB = async () => {
+  // Load activities
+  async function loadActivities() {
     try {
-      PartBSchema.parse(partBForm);
-
-      // Save Part B data to the leave request
-      if (selectedActivity) {
-        // Find the corresponding leave request
-        const leaveRequest = leaveRequests.find(req =>
-          selectedActivity.description.includes(req._id)
-        );
-
-        if (leaveRequest) {
-          const result = await updateLeaveRequestWithPartB(leaveRequest._id, partBForm);
-          if ("success" in result) {
-            // Update local state
-            setActivities(prev =>
-              prev.map(act =>
-                act._id === selectedActivity?._id
-                  ? { ...act, partBData: partBForm, status: "approved" }
-                  : act
-              )
-            );
-
-            // Update leave requests
-            setLeaveRequests(prev =>
-              prev.map(req =>
-                req._id === leaveRequest._id
-                  ? { ...req, partBData: partBForm, status: "approved" }
-                  : req
-              )
-            );
-          }
-        }
+      const data = await getEmployeeActivities("all"); // Or specific employee ID
+      if (Array.isArray(data)) {
+        setActivities(data);
       }
-
-      setIsPartBDialogOpen(false);
-      setIsEditMode(false);
     } catch (error) {
-      console.error("Failed to save Part B:", error);
-      alert("Failed to save Part B data");
+      console.error("Failed to load activities:", error);
     }
-  };
+  }
 
-  // Leave Form Functions
-  const validateLeaveForm = (): boolean => {
+  // Handle approve leave
+  async function handleApprove(leaveId: string): Promise<void> {
     try {
-      const formData: PartAData = {
-        employeeName: leaveForm.employeeName,
-        employmentNumber: leaveForm.employmentNumber,
-        employeePosition: leaveForm.employeePosition,
-        numberOfLeaveDays: leaveForm.numberOfLeaveDays,
-        startDate: new Date(leaveForm.startDate),
-        endDate: new Date(leaveForm.endDate),
-        locationDuringLeave: leaveForm.locationDuringLeave,
-        phoneNumber: leaveForm.phoneNumber,
-        dateOfRequest: new Date(leaveForm.dateOfRequest),
-        employeeSignature: leaveForm.employeeSignature,
-      };
+      setProcessing(leaveId);
 
-      PartASchema.parse(formData);
-      setValidationErrors({});
-      return true;
-    } catch (error: any) {
-      const errors: Record<string, string> = {};
-      if (error.errors) {
-        error.errors.forEach((err: any) => {
-          const path = err.path.join('.');
-          errors[path] = err.message;
+      const result = await updateLeaveRequest(leaveId, 'approved');
+
+      if (result.success) {
+        // Move the leave from pending to approved
+        const approvedLeave = pendingLeaves.find(leave => leave._id === leaveId);
+        if (approvedLeave) {
+          setPendingLeaves(prev => prev.filter(leave => leave._id !== leaveId));
+          setApprovedLeaves(prev => [...prev, {
+            ...approvedLeave,
+            status: 'approved',
+            approvedDate: new Date().toISOString()
+          }]);
+
+          toast("Success", {
+            description: "Leave request approved successfully",
+          });
+        }
+      } else {
+        toast("Error", {
+          description: result.error || "Failed to approve leave request",
         });
       }
-      setValidationErrors(errors);
-      return false;
+    } catch (error) {
+      console.error("Error approving leave:", error);
+      toast("Error", {
+        description: "An error occurred while approving the leave",
+      });
+    } finally {
+      setProcessing(null);
     }
-  };
+  }
 
-  const handleLeaveFormChange = (field: string, value: any) => {
+  // Handle reject leave with modal
+  function handleOpenRejectionModal(leave: LeaveWithEmployee) {
+    setSelectedRequestForAction(leave);
+    setRejectionReason("");
+    setIsRejectionModalOpen(true);
+  }
+
+  async function handleRejectRequest(): Promise<void> {
+    if (!selectedRequestForAction) return;
+
+    try {
+      setProcessing(selectedRequestForAction._id);
+
+      const result = await updateLeaveRequest(
+        selectedRequestForAction._id,
+        'rejected',
+      );
+
+      if (result.success) {
+        const rejectedLeave = pendingLeaves.find(leave => leave._id === selectedRequestForAction._id);
+        if (rejectedLeave) {
+          setPendingLeaves(prev => prev.filter(leave => leave._id !== selectedRequestForAction._id));
+          setRejectedLeaves(prev => [...prev, {
+            ...rejectedLeave,
+            status: 'rejected',
+            rejectionReason,
+            rejectedDate: new Date().toISOString()
+          }]);
+
+          toast("Success", {
+            description: "Leave request rejected successfully",
+          });
+
+          setRejectionReason("");
+          setSelectedRequestForAction(null);
+          setIsRejectionModalOpen(false);
+        }
+      } else {
+        toast("Error", {
+          description: result.error || "Failed to reject leave request",
+        });
+      }
+    } catch (error) {
+      console.error("Error rejecting leave:", error);
+      toast("Error", {
+        description: "An error occurred while rejecting the leave",
+      });
+    } finally {
+      setProcessing(null);
+    }
+  }
+
+  // Handle type selection for new request
+  function handleTypeChange(value: string) {
+    setType(value);
+    if (value === "leave") {
+      setIsLeaveModalOpen(true);
+    } else if (value === "concurrency") {
+      setIsConcurrencyModalOpen(true);
+    }
+  }
+
+  // Handle leave form changes
+  function handleLeaveFormChange(field: string, value: any) {
     setLeaveForm(prev => ({ ...prev, [field]: value }));
 
     if (validationErrors[field]) {
@@ -424,42 +290,44 @@ export default function EmployeeTimeline({
       });
     }
 
+    // Calculate days if dates change
     if (field === "startDate" || field === "endDate") {
       const startDate = field === "startDate" ? value : leaveForm.startDate;
       const endDate = field === "endDate" ? value : leaveForm.endDate;
 
       if (startDate && endDate) {
-        const numberOfDays = calculateDaysDifference(new Date(startDate), new Date(endDate));
-        setLeaveForm(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        setLeaveForm(prev => ({ ...prev, numberOfLeaveDays: days }));
       }
     }
-  };
+  }
 
-  const handleSelectLeaveRequest = (request: LeaveRequest) => {
-    setSelectedLeaveRequest(request);
-    setLeaveForm(prev => ({
-      ...prev,
-      leaveType: request.leaveType,
-      startDate: new Date(request.startDate).toISOString().split('T')[0],
-      endDate: new Date(request.endDate).toISOString().split('T')[0],
-      numberOfLeaveDays: request.days,
-      reason: request.reason || "",
-    }));
-  };
-
-  const calculateDaysDifference = (start: Date, end: Date) => {
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  };
-
-  const handleLeaveFormSubmit = async () => {
-    if (!validateLeaveForm()) {
-      return;
-    }
-
+  // Handle leave form submission
+  async function handleLeaveFormSubmit() {
     try {
-      // Prepare Part A data
-      const partAData: PartAData = {
+      // Basic validation
+      if (!leaveForm.employeeName || !leaveForm.startDate || !leaveForm.endDate) {
+        toast("Error",{
+          description: "Please fill in all required fields",
+        });
+        return;
+      }
+
+      const leaveRequestData = {
+        employeeId: session?.user?.id || "",
+        leaveType: leaveForm.leaveType,
+        startDate: new Date(leaveForm.startDate),
+        endDate: new Date(leaveForm.endDate),
+        days: leaveForm.numberOfLeaveDays,
+        reason: leaveForm.reason,
+        locationDuringLeave: leaveForm.locationDuringLeave,
+        status: "pending",
+      };
+
+      const result = await createLeaveRequest(leaveRequestData, {
         employeeName: leaveForm.employeeName,
         employmentNumber: leaveForm.employmentNumber,
         employeePosition: leaveForm.employeePosition,
@@ -470,56 +338,44 @@ export default function EmployeeTimeline({
         phoneNumber: leaveForm.phoneNumber,
         dateOfRequest: new Date(leaveForm.dateOfRequest),
         employeeSignature: leaveForm.employeeSignature,
-      };
+      });
 
-      // Create leave request in the leave_requests collection
-      const leaveRequestData = {
-        employeeId,
-        leaveType: leaveForm.leaveType,
-        startDate: new Date(leaveForm.startDate),
-        endDate: new Date(leaveForm.endDate),
-        days: leaveForm.numberOfLeaveDays,
-        reason: leaveForm.reason,
-        status: "pending",
-      };
-
-      const result = await createLeaveRequest(leaveRequestData, partAData);
-
-      if ("success" in result) {
-        // Also create an activity entry for the timeline
-        const leaveDescription = `Leave Request: ${leaveForm.leaveType} - ${leaveForm.numberOfLeaveDays} days from ${leaveForm.startDate} to ${leaveForm.endDate}. Location: ${leaveForm.locationDuringLeave}${leaveForm.reason ? `. Reason: ${leaveForm.reason}` : ''}`;
-
-        await addEmployeeActivity({
-          employeeId,
-          type: "leave",
-          description: leaveDescription,
+      if ("success" in result && result.success) {
+        toast("Success",{
+          description: "Leave request submitted successfully",
         });
 
-        handleLeaveModalClose();
-        await loadActivities();
-        await loadLeaveRequests();
+        // Reset form
+        setLeaveForm({
+          employeeName: "",
+          employmentNumber: "",
+          employeePosition: "",
+          email: "",
+          phoneNumber: "",
+          currentAddress: "",
+          leaveType: "annual",
+          numberOfLeaveDays: 0,
+          startDate: "",
+          endDate: "",
+          locationDuringLeave: "",
+          reason: "",
+          dateOfRequest: new Date().toISOString().split('T')[0],
+          employeeSignature: "",
+        });
+
+        setIsLeaveModalOpen(false);
+        loadLeaves();
       }
     } catch (error) {
       console.error("Failed to submit leave request:", error);
-      alert("Failed to submit leave request. Please try again.");
+      toast("Error",{
+        description: "Failed to submit leave request",
+      });
     }
-  };
+  }
 
-  const handleConcurrencySuccess = () => {
-    addEmployeeActivity({
-      employeeId,
-      type: "concurrency",
-      description: "Concurrency declaration submitted",
-    }).then(() => {
-      loadActivities();
-    });
-
-    setType("");
-    setIsConcurrencyModalOpen(false);
-  };
-
-  // UI Helper Functions
-  const getStatusBadge = (status?: string) => {
+  // Get status badge
+  function getStatusBadge(status?: string) {
     switch (status) {
       case "approved":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100"><CheckCircle className="h-3 w-3 mr-1" />Approved</Badge>;
@@ -529,495 +385,50 @@ export default function EmployeeTimeline({
       default:
         return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
     }
-  };
+  }
 
-  const renderError = (field: string) => {
-    if (validationErrors[field]) {
-      return (
-        <div className="flex items-center gap-1 mt-1 text-red-600 text-xs">
-          <AlertCircle className="h-3 w-3" />
-          <span>{validationErrors[field]}</span>
-        </div>
-      );
-    }
-    return null;
-  };
+  // Get initials for avatar
+  function getInitials(name: string) {
+    return name
+      .split(" ")
+      .map((part) => part.charAt(0))
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  }
 
-  // Render Components
-  const renderLeaveRequestSelection = () => (
-    <div className="space-y-4 mb-6">
-      <h4 className="font-medium text-gray-700">Select from Existing Leave Requests</h4>
-      {leaveRequests.length > 0 ? (
-        <div className="space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
-          {leaveRequests.map((request) => (
-            <div
-              key={request._id}
-              className={`p-3 border rounded cursor-pointer transition-colors ${selectedLeaveRequest?._id === request._id
-                ? "bg-blue-50 border-blue-300"
-                : "bg-gray-50 border-gray-200 hover:bg-gray-100"
-                }`}
-              onClick={() => handleSelectLeaveRequest(request)}
-            >
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="font-medium capitalize">{request.leaveType} Leave</p>
-                  <p className="text-sm text-gray-600">
-                    {new Date(request.startDate).toLocaleDateString()} - {new Date(request.endDate).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium">{request.days} days</p>
-                  <p className={`text-xs px-2 py-1 rounded-full ${request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                    request.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                      'bg-yellow-100 text-yellow-800'
-                    }`}>
-                    {request.status}
-                  </p>
-                </div>
-              </div>
-              {request.reason && (
-                <p className="text-sm text-gray-500 mt-1">{request.reason}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-gray-500 text-center py-4">
-          No pending or approved leave requests found.
-        </p>
-      )}
+  // Format date
+  function formatDate(dateString: string) {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
 
-      <div className="flex items-center gap-2">
-        <div className="flex-1 border-t border-gray-300"></div>
-        <span className="text-sm text-gray-500">OR</span>
-        <div className="flex-1 border-t border-gray-300"></div>
-      </div>
-
-      <p className="text-sm text-gray-600 text-center">
-        Fill out the form below manually
-      </p>
-    </div>
-  );
-
-  const renderPartBView = () => (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold">Part B - HR Section</h3>
-
-      <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-        <div>
-          <label className="text-sm font-medium text-gray-600">Annual Leave Days</label>
-          <p className="text-lg font-semibold">{partBForm.annualLeaveDays}</p>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-600">Deducted Days</label>
-          <p className="text-lg font-semibold text-red-600">{partBForm.deductedDays}</p>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-600">Remaining Leave Days</label>
-          <p className="text-lg font-semibold text-green-600">{partBForm.remainingLeaveDays}</p>
-        </div>
-
-        <div>
-          <label className="text-sm font-medium text-gray-600">Date of Approval</label>
-          <p className="text-lg font-semibold">
-            {partBForm.dateOfApproval
-              ? new Date(partBForm.dateOfApproval).toLocaleDateString()
-              : "Not set"}
-          </p>
-        </div>
-
-        <div className="col-span-2">
-          <label className="text-sm font-medium text-gray-600">HR Signature</label>
-          <p className="text-lg font-semibold">{partBForm.hrSignature || "Not signed"}</p>
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => setIsPartBDialogOpen(false)}>Close</Button>
-        <Button onClick={() => setIsEditMode(true)}>Edit</Button>
-      </div>
-    </div>
-  );
-
-  const renderPartBEdit = () => (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold">Part B - HR Section (Edit)</h3>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Annual Leave Days *
-          </label>
-          <input
-            type="number"
-            value={partBForm.annualLeaveDays}
-            onChange={(e) => handlePartBFormChange("annualLeaveDays", parseInt(e.target.value))}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
-            min="0"
-            max="365"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Deducted Days *
-          </label>
-          <input
-            type="number"
-            value={partBForm.deductedDays}
-            onChange={(e) => handlePartBFormChange("deductedDays", parseInt(e.target.value))}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
-            min="0"
-            max="365"
-          />
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Remaining Leave Days
-          </label>
-          <input
-            type="number"
-            value={partBForm.remainingLeaveDays}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm"
-            disabled
-          />
-          <p className="text-xs text-gray-500 mt-1">Auto-calculated</p>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Date of Approval
-          </label>
-          <input
-            type="date"
-            value={partBForm.dateOfApproval ? new Date(partBForm.dateOfApproval).toISOString().split('T')[0] : ""}
-            onChange={(e) => handlePartBFormChange("dateOfApproval", e.target.value ? new Date(e.target.value) : undefined)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
-          />
-        </div>
-
-        <div className="col-span-2">
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            HR Signature
-          </label>
-          <input
-            type="text"
-            value={partBForm.hrSignature}
-            onChange={(e) => handlePartBFormChange("hrSignature", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
-            placeholder="Enter HR signature"
-          />
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => {
-          setIsEditMode(false);
-          if (selectedActivity?.partBData) {
-            setPartBForm(selectedActivity.partBData);
-          }
-        }}>Cancel</Button>
-        <Button onClick={handleSavePartB}>Save Part B</Button>
-      </div>
-    </div>
-  );
-
-  const renderLeaveForm = () => (
-    <div className="space-y-4 max-h-[80vh] overflow-y-auto p-2">
-      <h3 className="text-lg font-semibold text-gray-800">Leave Request Form (Part A)</h3>
-
-      {/* Show loading state if employee data is still loading */}
-      {isLoadingEmployeeData && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <div className="flex items-center gap-2 text-blue-800">
-            <Clock className="h-4 w-4 animate-spin" />
-            <span>Loading employee information...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Employee Information Summary */}
-      {employeeData?.employee_details && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <h4 className="font-medium text-blue-800 mb-2">Employee Information</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="text-blue-600">Name:</span> {leaveForm.employeeName}
-            </div>
-            <div>
-              <span className="text-blue-600">Employment #:</span> {leaveForm.employmentNumber}
-            </div>
-            <div>
-              <span className="text-blue-600">Position:</span> {leaveForm.employeePosition}
-            </div>
-            <div>
-              <span className="text-blue-600">Phone:</span> {leaveForm.phoneNumber}
-            </div>
-            {leaveForm.email && (
-              <div>
-                <span className="text-blue-600">Email:</span> {leaveForm.email}
-              </div>
-            )}
-            {leaveForm.currentAddress && (
-              <div className="col-span-2">
-                <span className="text-blue-600">Address:</span> {leaveForm.currentAddress}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {renderLeaveRequestSelection()}
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* Personal Information Section - Auto-filled and read-only */}
-        <div className="col-span-2">
-          <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Personal Information</h4>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Employee Name *
-          </label>
-          <input
-            type="text"
-            value={leaveForm.employeeName}
-            onChange={(e) => handleLeaveFormChange("employeeName", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
-            required
-            readOnly
-            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
-          />
-          {renderError("employeeName")}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Employment Number *
-          </label>
-          <input
-            type="text"
-            value={leaveForm.employmentNumber}
-            onChange={(e) => handleLeaveFormChange("employmentNumber", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
-            required
-            readOnly
-            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
-          />
-          {renderError("employmentNumber")}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Employee Position *
-          </label>
-          <input
-            type="text"
-            value={leaveForm.employeePosition}
-            onChange={(e) => handleLeaveFormChange("employeePosition", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
-            required
-            readOnly
-            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
-          />
-          {renderError("employeePosition")}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Phone Number *
-          </label>
-          <input
-            type="tel"
-            value={leaveForm.phoneNumber}
-            onChange={(e) => handleLeaveFormChange("phoneNumber", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm text-gray-800"
-            required
-            readOnly
-            placeholder={isLoadingEmployeeData ? "Loading..." : ""}
-          />
-          {renderError("phoneNumber")}
-        </div>
-
-        {/* Leave Specific Information */}
-        <div className="col-span-2">
-          <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Leave Details</h4>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Leave Type *
-          </label>
-          <select
-            value={leaveForm.leaveType}
-            onChange={(e) => handleLeaveFormChange("leaveType", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          >
-            <option value="annual">Annual Leave</option>
-            <option value="sick">Sick Leave</option>
-            <option value="personal">Personal Leave</option>
-            <option value="unpaid">Unpaid Leave</option>
-            <option value="maternity">Maternity Leave</option>
-            <option value="paternity">Paternity Leave</option>
-            <option value="compassionate">Compassionate Leave</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Number of Leave Days *
-          </label>
-          <input
-            type="number"
-            value={leaveForm.numberOfLeaveDays}
-            className={`h-11 w-full rounded-lg border ${validationErrors.numberOfLeaveDays ? 'border-red-500' : 'border-gray-300'} bg-gray-100 px-4 py-2.5 text-sm text-gray-800`}
-            disabled
-          />
-          {renderError("numberOfLeaveDays")}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Start Date *
-          </label>
-          <input
-            type="date"
-            value={leaveForm.startDate}
-            onChange={(e) => handleLeaveFormChange("startDate", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.startDate ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
-            required
-          />
-          {renderError("startDate")}
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            End Date *
-          </label>
-          <input
-            type="date"
-            value={leaveForm.endDate}
-            onChange={(e) => handleLeaveFormChange("endDate", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.endDate ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
-            required
-          />
-          {renderError("endDate")}
-        </div>
-
-        <div className="col-span-2">
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Location/Address During Leave *
-          </label>
-          <input
-            type="text"
-            value={leaveForm.locationDuringLeave}
-            onChange={(e) => handleLeaveFormChange("locationDuringLeave", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.locationDuringLeave ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
-            required
-            placeholder="Where will you be during your leave?"
-          />
-          {renderError("locationDuringLeave")}
-        </div>
-
-        <div className="col-span-2">
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Reason for Leave
-          </label>
-          <textarea
-            value={leaveForm.reason}
-            onChange={(e) => handleLeaveFormChange("reason", e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            rows={3}
-            placeholder="Please provide a reason for your leave (optional)"
-          />
-        </div>
-
-        {/* Signature Section */}
-        <div className="col-span-2">
-          <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Declaration</h4>
-        </div>
-
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Date of Request
-          </label>
-          <input
-            type="date"
-            value={leaveForm.dateOfRequest}
-            onChange={(e) => handleLeaveFormChange("dateOfRequest", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.dateOfRequest ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
-          />
-          {renderError("dateOfRequest")}
-        </div>
-
-        <div className="col-span-2">
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Employee Signature *
-          </label>
-          <input
-            type="text"
-            value={leaveForm.employeeSignature}
-            onChange={(e) => handleLeaveFormChange("employeeSignature", e.target.value)}
-            className={`h-11 w-full rounded-lg border ${validationErrors.employeeSignature ? 'border-red-500' : 'border-gray-300'} bg-transparent px-4 py-2.5 text-sm text-gray-800`}
-            placeholder="Type your full name as signature"
-            required
-          />
-          {renderError("employeeSignature")}
-          <p className="text-xs text-gray-500 mt-1">
-            By signing, I declare that the information provided is true and correct
-          </p>
-        </div>
-      </div>
-
-      {Object.keys(validationErrors).length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-red-800 font-medium mb-2">
-            <AlertCircle className="h-5 w-5" />
-            <span>Please fix the following errors:</span>
-          </div>
-          <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-            {Object.entries(validationErrors).map(([field, error]) => (
-              <li key={field}>{error}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="flex items-center gap-3 mt-6 justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleLeaveModalClose}
-        >
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          onClick={handleLeaveFormSubmit}
-          disabled={isLoadingEmployeeData}
-        >
-          {isLoadingEmployeeData ? "Loading..." : "Submit Leave Request"}
-        </Button>
-      </div>
-    </div>
-  );
+  // Load data on mount
+  useEffect(() => {
+    loadLeaves();
+    loadActivities();
+  }, []);
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Employee Timeline</h2>
+        <h2 className="text-xl font-semibold">Leave Management</h2>
         <Dialog>
           <DialogTrigger asChild>
-            <Button>Add Activity</Button>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              New Leave Request
+            </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add New Activity</DialogTitle>
+              <DialogTitle>Create New Leave Request</DialogTitle>
               <DialogDescription>
-                Select an activity type to open the corresponding form.
+                Select an option to create a new leave request.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -1026,7 +437,7 @@ export default function EmployeeTimeline({
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="leave">Leave</SelectItem>
+                  <SelectItem value="leave">Leave Request</SelectItem>
                   <SelectItem value="concurrency">Concurrency Declaration</SelectItem>
                 </SelectContent>
               </Select>
@@ -1035,108 +446,523 @@ export default function EmployeeTimeline({
         </Dialog>
       </div>
 
-      {/* Timeline Activities */}
-      <div className="space-y-4">
-        {activities.map((act) => (
-          <Card key={act._id} className="hover:shadow-md transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <FileText className="h-5 w-5 text-blue-600" />
+      {/* Pending Leaves Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-yellow-600" />
+            Pending Leave Requests ({pendingLeaves.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {pendingLeaves.length > 0 ? (
+            pendingLeaves.map((leave) => (
+              <Card key={leave._id} className="hover:shadow-md transition-shadow duration-200">
+                <CardContent className="p-6">
+                  <div className="flex flex-col space-y-4 lg:flex-row lg:items-start lg:justify-between lg:space-y-0">
+                    <div className="flex-1 space-y-4">
+                      {/* Employee Info Header */}
+                      <div className="flex items-start space-x-4">
+                        <Avatar className="w-12 h-12">
+                          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                            {getInitials(leave.employeeDetails.name || "Unknown")}
+                          </AvatarFallback>
+                        </Avatar>
+
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-lg text-gray-900 truncate">
+                            {leave.employeeDetails.other_names} {leave.employeeDetails.surname}
+                          </h3>
+
+                          <div className="flex items-center space-x-2 text-sm text-gray-500 mt-1">
+                            <Mail className="w-4 h-4 flex-shrink-0" />
+                            <span className="truncate">{leave.employeeDetails.email}</span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {leave.employeeDetails.employment_number && (
+                              <Badge variant="outline" className="text-xs">
+                                #{leave.employeeDetails.employment_number}
+                              </Badge>
+                            )}
+                            {leave.employeeDetails.phone && (
+                              <span className="text-xs text-gray-500 flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {leave.employeeDetails.phone}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Status Badge */}
+                        {getStatusBadge(leave.status)}
+                      </div>
+
+                      {/* Leave Details */}
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-4">
+                          <div className="flex items-center space-x-2">
+                            <Calendar className="w-4 h-4 text-gray-500" />
+                            <div className="text-sm">
+                              <span className="font-medium">
+                                {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+                              </span>
+                              <span className="text-gray-500 ml-2">
+                                ({leave.days} day{leave.days !== 1 ? "s" : ""})
+                              </span>
+                            </div>
+                          </div>
+
+                          <Badge variant="outline" className="capitalize">
+                            {leave.leaveType} Leave
+                          </Badge>
+                        </div>
+
+                        {/* Applied Date */}
+                        <div className="flex items-center space-x-2 text-sm text-gray-500">
+                          <Clock className="w-4 h-4" />
+                          <span>Applied on {formatDate(leave.appliedDate)}</span>
+                        </div>
+
+                        {/* Reason */}
+                        {leave.reason && leave.reason.trim() && (
+                          <div className="p-3 bg-gray-50 rounded-md">
+                            <p className="text-sm text-gray-700">
+                              <span className="font-medium">Reason:</span> {leave.reason}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Admin Action Buttons */}
+                    {isAdmin && leave.status === "pending" && (
+                      <div className="flex flex-col space-y-2 min-w-[200px] lg:ml-4">
+                        <Button
+                          size="sm"
+                          onClick={() => handleApprove(leave._id)}
+                          disabled={!!processing}
+                          className="w-full bg-green-600 hover:bg-green-700"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          {processing === leave._id ? "Approving..." : "Approve"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleOpenRejectionModal(leave)}
+                          disabled={!!processing}
+                          className="w-full"
+                        >
+                          <XCircle className="h-4 w-4 mr-2" />
+                          {processing === leave._id ? "Rejecting..." : "Reject"}
+                        </Button>
+                      </div>
+                    )}
                   </div>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <div className="text-center py-8">
+              <Clock className="h-12 w-12 mx-auto text-gray-400 mb-3" />
+              <p className="text-lg font-medium text-gray-600">No pending leave requests</p>
+              <p className="text-sm text-gray-500">All leave requests have been processed</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Approved Leaves Section */}
+      {approvedLeaves.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              Approved Leave Requests ({approvedLeaves.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {approvedLeaves.map((leave) => (
+              <div key={leave._id} className="border border-green-200 rounded-lg p-4 bg-green-50">
+                <div className="flex justify-between items-start mb-3">
                   <div>
-                    <CardTitle className="text-lg">{act.type === 'leave' ? act.description.split(' - ')[0] : 'Concurrency Declaration'}</CardTitle>
-                    <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                      <CalendarDays className="h-4 w-4" />
-                      <span>Submitted: {new Date(act.date).toLocaleDateString()}</span>
+                    <h4 className="font-semibold text-lg capitalize">{leave.leaveType} Leave</h4>
+                    <p className="text-sm text-gray-600">
+                      {leave.employeeDetails.other_names} {leave.employeeDetails.surname}
+                    </p>
+                  </div>
+                  {getStatusBadge(leave.status)}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <div>
+                      <p className="text-sm font-medium">Dates</p>
+                      <p className="text-sm text-gray-600">
+                        {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+                      </p>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {act.type === 'leave' && getStatusBadge(act.status)}
-                </div>
-              </div>
-            </CardHeader>
 
-            <CardContent>
-              <div className="flex justify-between items-center">
-                <div className="text-sm text-gray-600">
-                  <p>{act.description}</p>
-                  {act.type === 'leave' && act.partBData && (
-                    <div className="mt-2 flex gap-4 text-xs">
-                      <span className="font-medium">Annual: {act.partBData.annualLeaveDays} days</span>
-                      <span className="font-medium text-red-600">Deducted: {act.partBData.deductedDays} days</span>
-                      <span className="font-medium text-green-600">Remaining: {act.partBData.remainingLeaveDays} days</span>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-gray-500" />
+                    <div>
+                      <p className="text-sm font-medium">Duration</p>
+                      <p className="text-sm text-gray-600">{leave.days} days</p>
+                    </div>
+                  </div>
+
+                  {leave.approvedDate && (
+                    <div className="col-span-2">
+                      <p className="text-sm font-medium">Approved On</p>
+                      <p className="text-sm text-gray-600">{formatDate(leave.approvedDate)}</p>
                     </div>
                   )}
                 </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
-                <div className="flex gap-2">
-                  {act.type === 'leave' ? (
-                    act.partBData ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewPartB(act)}
-                        >
-                          View Part B
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleEditPartB(act)}
-                        >
-                          Edit Part B
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => handleEditPartB(act)}
-                      >
-                        Add Part B
-                      </Button>
-                    )
-                  ) : null}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDelete(act._id)}
-                  >
-                    Delete
-                  </Button>
+      {/* Rejected Leaves Section */}
+      {rejectedLeaves.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-600" />
+              Rejected Leave Requests ({rejectedLeaves.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {rejectedLeaves.map((leave) => (
+              <div key={leave._id} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h4 className="font-semibold text-lg capitalize">{leave.leaveType} Leave</h4>
+                    <p className="text-sm text-gray-600">
+                      {leave.employeeDetails.other_names} {leave.employeeDetails.surname}
+                    </p>
+                  </div>
+                  {getStatusBadge(leave.status)}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <div>
+                      <p className="text-sm font-medium">Dates</p>
+                      <p className="text-sm text-gray-600">
+                        {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-gray-500" />
+                    <div>
+                      <p className="text-sm font-medium">Duration</p>
+                      <p className="text-sm text-gray-600">{leave.days} days</p>
+                    </div>
+                  </div>
+
+                  {leave.rejectionReason && (
+                    <div className="col-span-2">
+                      <p className="text-sm font-medium text-red-700">Rejection Reason</p>
+                      <p className="text-sm text-red-600">{leave.rejectionReason}</p>
+                    </div>
+                  )}
+
+                  {leave.rejectedDate && (
+                    <div className="col-span-2">
+                      <p className="text-sm font-medium">Rejected On</p>
+                      <p className="text-sm text-gray-600">{formatDate(leave.rejectedDate)}</p>
+                    </div>
+                  )}
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
-        {activities.length === 0 && (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <FileText className="h-12 w-12 mx-auto text-gray-400 mb-3" />
-              <p className="text-lg font-medium text-gray-600">No activities recorded yet</p>
-              <p className="text-sm text-gray-500 mt-1">
-                Use the "Add Activity" button to add new entries
-              </p>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      {/* Activity Timeline */}
+      {activities.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-blue-600" />
+              Activity Timeline ({activities.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activities.map((act) => (
+              <div key={act._id} className="border rounded-lg p-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-medium">{act.type === 'leave' ? 'Leave Request' : 'Concurrency Declaration'}</h4>
+                    <p className="text-sm text-gray-600">{act.description}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(act.date).toLocaleDateString()}
+                    </p>
+                  </div>
+                  {getStatusBadge(act.status)}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
-      {/* FIXED: Leave Form Modal - using direct state management */}
+      {/* Leave Form Modal */}
       <Modal
         isOpen={isLeaveModalOpen}
-        onClose={handleLeaveModalClose}
+        onClose={() => setIsLeaveModalOpen(false)}
         className="max-w-4xl p-6 lg:p-10 max-h-[90vh] overflow-y-auto"
       >
-        {renderLeaveForm()}
+        <div className="space-y-4 max-h-[80vh] overflow-y-auto p-2">
+          <h3 className="text-lg font-semibold text-gray-800">Leave Request Form</h3>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Personal Information */}
+            <div className="col-span-2">
+              <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Personal Information</h4>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Employee Name *
+              </label>
+              <input
+                type="text"
+                value={leaveForm.employeeName}
+                onChange={(e) => handleLeaveFormChange("employeeName", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Employment Number *
+              </label>
+              <input
+                type="text"
+                value={leaveForm.employmentNumber}
+                onChange={(e) => handleLeaveFormChange("employmentNumber", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                required
+              />
+            </div>
+
+            {/* Leave Details */}
+            <div className="col-span-2">
+              <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Leave Details</h4>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Leave Type *
+              </label>
+              <select
+                value={leaveForm.leaveType}
+                onChange={(e) => handleLeaveFormChange("leaveType", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+              >
+                <option value="annual">Annual Leave</option>
+                <option value="sick">Sick Leave</option>
+                <option value="personal">Personal Leave</option>
+                <option value="unpaid">Unpaid Leave</option>
+                <option value="maternity">Maternity Leave</option>
+                <option value="paternity">Paternity Leave</option>
+                <option value="compassionate">Compassionate Leave</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Number of Days
+              </label>
+              <input
+                type="number"
+                value={leaveForm.numberOfLeaveDays}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm"
+                disabled
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Start Date *
+              </label>
+              <input
+                type="date"
+                value={leaveForm.startDate}
+                onChange={(e) => handleLeaveFormChange("startDate", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                End Date *
+              </label>
+              <input
+                type="date"
+                value={leaveForm.endDate}
+                onChange={(e) => handleLeaveFormChange("endDate", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                required
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Location During Leave
+              </label>
+              <input
+                type="text"
+                value={leaveForm.locationDuringLeave}
+                onChange={(e) => handleLeaveFormChange("locationDuringLeave", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                placeholder="Where will you be during your leave?"
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Reason for Leave
+              </label>
+              <textarea
+                value={leaveForm.reason}
+                onChange={(e) => handleLeaveFormChange("reason", e.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                rows={3}
+                placeholder="Please provide a reason for your leave"
+              />
+            </div>
+
+            {/* Declaration */}
+            <div className="col-span-2">
+              <h4 className="font-medium text-gray-700 mb-3 border-b pb-2">Declaration</h4>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Date of Request
+              </label>
+              <input
+                type="date"
+                value={leaveForm.dateOfRequest}
+                onChange={(e) => handleLeaveFormChange("dateOfRequest", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Employee Signature *
+              </label>
+              <input
+                type="text"
+                value={leaveForm.employeeSignature}
+                onChange={(e) => handleLeaveFormChange("employeeSignature", e.target.value)}
+                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm"
+                placeholder="Type your full name as signature"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                By signing, I declare that the information provided is true and correct
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 mt-6 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsLeaveModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleLeaveFormSubmit}
+            >
+              Submit Leave Request
+            </Button>
+          </div>
+        </div>
       </Modal>
 
-      {/* FIXED: Concurrency Declaration Modal */}
+      {/* Rejection Modal */}
+      <Dialog open={isRejectionModalOpen} onOpenChange={setIsRejectionModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <XCircle className="h-5 w-5" />
+              Reject Leave Request
+            </DialogTitle>
+            <DialogDescription>
+              Provide a reason for rejecting this leave request
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedRequestForAction && (
+            <div className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="font-medium">Request Details:</p>
+                <p className="text-sm">
+                  {selectedRequestForAction.leaveType} Leave - {selectedRequestForAction.days} days
+                </p>
+                <p className="text-sm">
+                  {formatDate(selectedRequestForAction.startDate)} to {formatDate(selectedRequestForAction.endDate)}
+                </p>
+                <p className="text-sm">
+                  Employee: {selectedRequestForAction.employeeDetails.other_names} {selectedRequestForAction.employeeDetails.surname}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for Rejection *
+                </label>
+                <Textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Enter the reason for rejecting this leave request..."
+                  className="min-h-[100px]"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This reason will be visible to the employee
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsRejectionModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleRejectRequest}
+                  disabled={!rejectionReason.trim() || !!processing}
+                >
+                  {processing === selectedRequestForAction._id ? "Rejecting..." : "Confirm Rejection"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Concurrency Form Modal */}
       <Dialog open={isConcurrencyModalOpen} onOpenChange={setIsConcurrencyModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1145,29 +971,18 @@ export default function EmployeeTimeline({
               Concurrency Declaration Form
             </DialogTitle>
             <DialogDescription>
-              Complete the concurrence declaration for {employeeData?.employee_details ? `${employeeData.employee_details.other_names} ${employeeData.employee_details.surname}` : 'this employee'}.
+              Complete the concurrence declaration for employees.
             </DialogDescription>
           </DialogHeader>
           <ConcurrencyForm
-            employee={employeeData}
-            mode="create"
-            onSuccess={handleConcurrencySuccess}
-            onCancel={handleConcurrencyModalClose}
+            onSuccess={() => {
+              setIsConcurrencyModalOpen(false);
+              toast("Success",{
+                description: "Concurrency declaration submitted successfully",
+              });
+            }}
+            onCancel={() => setIsConcurrencyModalOpen(false)}
           />
-        </DialogContent>
-      </Dialog>
-
-      {/* Part B Dialog */}
-      <Dialog open={isPartBDialogOpen} onOpenChange={setIsPartBDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Leave Request - Part B (HR Section)</DialogTitle>
-            <DialogDescription>
-              {selectedActivity?.description}
-            </DialogDescription>
-          </DialogHeader>
-
-          {isEditMode ? renderPartBEdit() : renderPartBView()}
         </DialogContent>
       </Dialog>
     </div>

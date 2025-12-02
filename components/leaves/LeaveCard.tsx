@@ -1,10 +1,28 @@
 import React from "react";
-import { LeaveWithEmployee } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Calendar, Mail, Clock, User } from "lucide-react";
+
+interface LeaveWithEmployee {
+  _id: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  reason?: string;
+  status: string;
+  appliedDate: string;
+  approvedDate?: string;
+  rejectedDate?: string;
+  rejectionReason?: string;
+  approverComments?: string;
+  employeeId: string;
+  employeeDetails: EmployeeDetailsFormValues
+}
+
+import { EmployeeDetailsFormValues } from "@/schemas";
 
 interface LeaveCardProps {
   leave: LeaveWithEmployee;
@@ -26,11 +44,11 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case "approved":
-        return "default"; // green
+        return "default";
       case "rejected":
-        return "destructive"; // red
+        return "destructive";
       case "pending":
-        return "secondary"; // yellow/orange
+        return "secondary";
       default:
         return "outline";
     }
@@ -58,7 +76,8 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
     });
   };
 
-  const getInitials = (name: string) => {
+  const getInitials = (name?: string) => {
+    if (!name) return "??";
     return name
       .split(" ")
       .map((part) => part.charAt(0))
@@ -75,41 +94,47 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
             {/* Employee Info Header */}
             <div className="flex items-start space-x-4">
               <Avatar className="w-12 h-12">
-                <AvatarImage
-                  src={employeeDetails.avatar}
-                  alt={employeeDetails.name}
-                />
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                  {getInitials(employeeDetails.name || "Unknown")}
-                </AvatarFallback>
+                {employeeDetails.profile_picture ? (
+                  <AvatarImage
+                    src={employeeDetails.profile_picture}
+                    alt={employeeDetails.other_names || "Employee"}
+                  />
+                ) : (
+                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                    {getInitials(
+                      `${employeeDetails || ""} ${employeeDetails.surname || ""}`.trim() ||
+                      employeeDetails.other_names ||
+                      "Unknown"
+                    )}
+                  </AvatarFallback>
+                )}
               </Avatar>
 
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-lg text-gray-900 dark:text-white truncate">
-                  {employeeDetails.name}
+                <h3 className="font-semibold text-lg text-gray-900 truncate">
+                  {employeeDetails.other_names} {employeeDetails.surname}
                 </h3>
 
-                <div className="flex items-center space-x-2 text-sm text-gray-500 mt-1">
-                  <Mail className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">{employeeDetails.email}</span>
-                </div>
-
-                {(employeeDetails.employment_number ||
-                  employeeDetails.phone) && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {employeeDetails.employment_number && (
-                      <Badge variant="outline" className="text-xs">
-                        #{employeeDetails.employment_number}
-                      </Badge>
-                    )}
-                    {employeeDetails.phone && (
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {employeeDetails.phone}
-                      </span>
-                    )}
+                {employeeDetails.email && (
+                  <div className="flex items-center space-x-2 text-sm text-gray-500 mt-1">
+                    <Mail className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">{employeeDetails.email}</span>
                   </div>
                 )}
+
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {employeeDetails.employment_number && (
+                    <Badge variant="outline" className="text-xs">
+                      #{employeeDetails.employment_number}
+                    </Badge>
+                  )}
+                  {employeeDetails.telephone && (
+                    <span className="text-xs text-gray-500 flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      {employeeDetails.telephone}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Status Badge */}
@@ -128,8 +153,7 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                   <Calendar className="w-4 h-4 text-gray-500" />
                   <div className="text-sm">
                     <span className="font-medium">
-                      {formatDate(leave.startDate)} -{" "}
-                      {formatDate(leave.endDate)}
+                      {formatDate(leave.startDate)} - {formatDate(leave.endDate)}
                     </span>
                     <span className="text-gray-500 ml-2">
                       ({leave.days} day{leave.days !== 1 ? "s" : ""})
@@ -150,8 +174,8 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
 
               {/* Reason */}
               {leave.reason && leave.reason.trim() && (
-                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                <div className="p-3 bg-gray-50 rounded-md">
+                  <p className="text-sm text-gray-700">
                     <span className="font-medium">Reason:</span> {leave.reason}
                   </p>
                 </div>
@@ -159,9 +183,9 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
 
               {/* Approval/Rejection Details */}
               {(leave.status === "approved" || leave.status === "rejected") && (
-                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md text-sm">
+                <div className="p-3 bg-gray-50 rounded-md text-sm">
                   {leave.status === "approved" && leave.approvedDate && (
-                    <p className="text-green-700 dark:text-green-300">
+                    <p className="text-green-700">
                       <span className="font-medium">Approved:</span>{" "}
                       {formatDate(leave.approvedDate)}
                       {leave.approverComments && (
@@ -173,7 +197,7 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                   )}
 
                   {leave.status === "rejected" && leave.rejectedDate && (
-                    <p className="text-red-700 dark:text-red-300">
+                    <p className="text-red-700">
                       <span className="font-medium">Rejected:</span>{" "}
                       {formatDate(leave.rejectedDate)}
                       {leave.rejectionReason && (

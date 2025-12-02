@@ -90,6 +90,8 @@ export type EmployeeWithUser = Employee & {
 }
 
 export interface LeaveRequest {
+  partAData: any
+  partBData: any
   formData: undefined
   _id: string
   employeeId: Employee

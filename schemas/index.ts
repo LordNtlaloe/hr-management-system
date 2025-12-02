@@ -294,6 +294,7 @@ export const EmployeeDetailsSchema = z
     // Section 8
     is_citizen: z.boolean(),
 
+    employment_number: z.string().min(6, "Employee number is required"),
     // Sections 9-11: Citizen Information (conditional)
     citizen_info: z
       .object({
