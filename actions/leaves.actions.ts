@@ -9,6 +9,7 @@ import {
   type PartAData,
   type PartBData,
 } from "@/schemas";
+import { LeaveRequest } from "@/types";
 
 let dbConnection: any;
 let database: any;
@@ -930,5 +931,66 @@ export const getEmployeeLeaveUtilization = async (
   } catch (error: any) {
     console.error("❌ Error fetching employee leave utilization:", error.message);
     return { error: error.message };
+  }
+};
+
+// Add this function to your leave-actions.ts file
+
+// 🔹 Get Employee Activities (Leave Requests as Timeline)
+export const getEmployeeActivities = async (employeeId: string) => {
+  if (!dbConnection) await init();
+  
+  try {
+    const collection = await database?.collection("leave_requests");
+    
+    console.log("🔍 Fetching activities for employeeId:", employeeId);
+    
+    // Build filter for this specific employee
+    const filter: any = {};
+    
+    try {
+      filter.employeeId = normalizeObjectId(employeeId);
+      console.log("✅ Using normalized ObjectId for employeeId");
+    } catch (error) {
+      console.log("❌ Could not normalize as ObjectId, using string employeeId");
+      filter.employeeId = employeeId;
+    }
+    
+    // Fetch all leave requests for this employee
+    const leaves = await collection
+      .find(filter)
+      .sort({ appliedDate: -1 }) // Most recent first
+      .toArray();
+    
+    console.log(`✅ Found ${leaves.length} leave activities for employee ${employeeId}`);
+    
+    // Transform leave requests into activity format
+    const activities = leaves.map((leave: LeaveRequest) => ({
+      _id: leave._id,
+      type: "leave",
+      description: `${leave.leaveType} leave request for ${leave.days} day(s) from ${new Date(leave.startDate).toLocaleDateString()} to ${new Date(leave.endDate).toLocaleDateString()}`,
+      date: leave.appliedDate || leave.createdAt,
+      status: leave.status,
+      partBData: leave.partBData || null,
+      // Include additional leave details
+      leaveDetails: {
+        leaveType: leave.leaveType,
+        startDate: leave.startDate,
+        endDate: leave.endDate,
+        days: leave.days,
+        reason: leave.reason,
+        appliedDate: leave.appliedDate,
+        approvedDate: leave.approvedDate,
+        rejectedDate: leave.rejectedDate,
+        approverComments: leave.approverComments,
+        rejectionReason: leave.rejectionReason,
+      }
+    }));
+    
+    return serializeDocument(activities);
+  } catch (error: any) {
+    console.error("❌ Error fetching employee activities:", error.message);
+    console.error("Stack trace:", error.stack);
+    return [];
   }
 };
