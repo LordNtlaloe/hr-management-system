@@ -609,36 +609,50 @@ const LeavesPage: React.FC = () => {
     );
   }
 
-  async function  handleApprove(leaveId: string): Promise<void> {
-    if (!user?.id) return;
+  // Fix for the handleApprove function in LeavesPage.tsx
+  // Replace your existing handleApprove function with this:
 
-    setProcessing(leaveId)
-    try {
-      const result = await approveLeaveRequest(leaveId, user.id, `Approved By ${user.first_name}&nbsp;${user.last_name}`)
-      if (result.success) {
-        toast.success("Leave Approval Successful")
-        fetchLeaves(employeeId)
-      }
-      else {
-        toast.error(result.error || "Failed To Process Leave Approval")
-      }
+  async function handleApprove(leaveId: string): Promise<void> {
+    if (!user?.id) {
+      toast.error("User not authenticated");
+      return;
     }
-    catch (err) {
-      console.error("Error rejecting leave:", err);
-      toast.error("Failed to reject leave request");
+
+    setProcessing(leaveId);
+    try {
+      // Check what approveLeaveRequest actually expects
+      // If it only needs 2 parameters (leaveId and userId), use this:
+      const result = await approveLeaveRequest(leaveId, user.id);
+
+      // OR if it needs 3 parameters and the third is optional comments:
+      // const result = await approveLeaveRequest(leaveId, user.id, "Approved by admin");
+
+      if (result.success) {
+        toast.success("Leave Approval Successful");
+        await fetchLeaves(employeeId);
+      } else {
+        toast.error(result.error || "Failed To Process Leave Approval");
+      }
+    } catch (err) {
+      console.error("Error approving leave:", err);
+      toast.error("Failed to approve leave request");
     } finally {
       setProcessing(null);
     }
   }
 
   async function handleReject(leaveId: string): Promise<void> {
-    if (!user?.id) return;
+    if (!user?.id) {
+      toast.error("User not authenticated");
+      return;
+    }
+
     setProcessing(leaveId);
     try {
       const result = await rejectLeaveRequest(leaveId, user.id, "Rejected by admin");
       if (result.success) {
         toast.success("Leave request rejected successfully");
-        fetchLeaves(employeeId);
+        await fetchLeaves(employeeId);
       } else {
         toast.error(result.error || "Failed to reject leave request");
       }
@@ -649,6 +663,7 @@ const LeavesPage: React.FC = () => {
       setProcessing(null);
     }
   }
+
   // 🔹 Admin/Manager view
   return (
     <div className="container mx-auto p-6 space-y-6">
