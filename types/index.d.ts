@@ -115,13 +115,7 @@ export interface LeaveRequest {
 
 export interface LeaveWithEmployee extends LeaveRequest {
   formData: any
-  employeeDetails: {
-    name: string;
-    email: string;
-    avatar?: string;
-    employment_number?: string;
-    phone?: string;
-  };
+  employeeDetails: Employee
 }
 
 

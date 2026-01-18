@@ -43,7 +43,7 @@ const PendingLeaves: React.FC = () => {
                 employment_number: employee?.employment_number,
                 phone: employee?.phone,
               },
-            } as LeaveWithEmployee;
+            } as unknown as LeaveWithEmployee;
           })
         );
 

@@ -721,7 +721,7 @@ const LeavesPage: React.FC = () => {
               Multi-Section Leave Approval
             </h5>
             <p className="text-sm text-gray-500">
-              Processing leave request for {selectedLeave?.employeeDetails.name}
+              Processing leave request for {selectedLeave?.employeeDetails.first_name}
             </p>
           </div>
 

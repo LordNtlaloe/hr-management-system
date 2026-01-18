@@ -51,7 +51,7 @@ export const processLeaveRequests = async (
           employment_number: employee?.employment_number,
           phone: employee?.phone,
         },
-      } as LeaveWithEmployee;
+      } as unknown as LeaveWithEmployee;
     })
   );
 
@@ -123,7 +123,7 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
 
     if (searchTerm) {
       filtered = filtered.filter((leave) => {
-        const name = leave.employeeDetails.name || "";
+        const name = leave.employeeDetails.first_name || "";
         const email = leave.employeeDetails.email || "";
         const reason = leave.reason || "";
 

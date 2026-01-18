@@ -4,25 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Calendar, Mail, Clock, User } from "lucide-react";
-
-interface LeaveWithEmployee {
-  _id: string;
-  leaveType: string;
-  startDate: string;
-  endDate: string;
-  days: number;
-  reason?: string;
-  status: string;
-  appliedDate: string;
-  approvedDate?: string;
-  rejectedDate?: string;
-  rejectionReason?: string;
-  approverComments?: string;
-  employeeId: string;
-  employeeDetails: EmployeeDetailsFormValues
-}
-
-import { EmployeeDetailsFormValues } from "@/schemas";
+import { LeaveWithEmployee } from "@/types";
 
 interface LeaveCardProps {
   leave: LeaveWithEmployee;
@@ -39,7 +21,8 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
   onApprove,
   onReject,
 }) => {
-  const { employeeDetails } = leave;
+  // Access the employee data from employeeId (which is the populated Employee object)
+  const employeeDetails = leave.employeeId;
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -94,16 +77,15 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
             {/* Employee Info Header */}
             <div className="flex items-start space-x-4">
               <Avatar className="w-12 h-12">
-                {employeeDetails.profile_picture ? (
+                {employeeDetails.image ? (
                   <AvatarImage
-                    src={employeeDetails.profile_picture}
-                    alt={employeeDetails.other_names || "Employee"}
+                    src={employeeDetails.image}
+                    alt={employeeDetails.first_name || "Employee"}
                   />
                 ) : (
                   <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
                     {getInitials(
-                      `${employeeDetails || ""} ${employeeDetails.surname || ""}`.trim() ||
-                      employeeDetails.other_names ||
+                      `${employeeDetails.first_name || ""} ${employeeDetails.last_name || ""}`.trim() ||
                       "Unknown"
                     )}
                   </AvatarFallback>
@@ -112,7 +94,7 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
 
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-lg text-gray-900 truncate">
-                  {employeeDetails.other_names} {employeeDetails.surname}
+                  {employeeDetails.first_name} {employeeDetails.last_name}
                 </h3>
 
                 {employeeDetails.email && (
@@ -128,10 +110,10 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                       #{employeeDetails.employment_number}
                     </Badge>
                   )}
-                  {employeeDetails.telephone && (
+                  {employeeDetails.phone && (
                     <span className="text-xs text-gray-500 flex items-center gap-1">
                       <User className="w-3 h-3" />
-                      {employeeDetails.telephone}
+                      {employeeDetails.phone}
                     </span>
                   )}
                 </div>
