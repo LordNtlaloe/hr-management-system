@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Clock, CheckCircle, XCircle, FileText } from "lucide-react";
-import { getEmployeeActivities } from "@/actions/leaves.actions";
+import { getEmployeeLeaveRequests } from "@/actions/leaves.actions";
 
 interface EmployeeTimelineProps {
   employeeId: string;
@@ -38,7 +38,7 @@ export default function EmployeeTimeline({ employeeId }: EmployeeTimelineProps) 
   useEffect(() => {
     async function loadActivities() {
       try {
-        const data = await getEmployeeActivities(employeeId);
+        const data = await getEmployeeLeaveRequests(employeeId);
         if (Array.isArray(data)) {
           setActivities(data);
         }
