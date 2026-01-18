@@ -94,7 +94,7 @@ export interface LeaveRequest {
   partBData: any
   formData: undefined
   _id: string
-  employeeId: Employee
+  employeeId: Employee.is
   leaveType: string
   startDate: string
   endDate: string

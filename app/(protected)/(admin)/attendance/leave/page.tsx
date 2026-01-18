@@ -126,13 +126,11 @@ const LeavesPage: React.FC = () => {
           }
 
           const employeeDetails = {
-            name: employeeData
-              ? `${employeeData.first_name} ${employeeData.last_name}`.trim()
-              : "Unknown Employee",
-            email: employeeData?.email || "Not available",
+            name: `${employeeData?.first_name} ${employeeData?.last_name}`.trim,
+            email: employeeData?.email,
             avatar: employeeData?.image,
-            employment_number: employeeData?.employment_number || "N/A",
-            phone: employeeData?.phone || "Not available",
+            employment_number: employeeData?.employment_number,
+            phone: employeeData?.phone,
           };
 
           return {
