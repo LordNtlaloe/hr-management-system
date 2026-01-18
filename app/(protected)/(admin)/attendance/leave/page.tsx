@@ -528,8 +528,8 @@ const LeavesPage: React.FC = () => {
         type="button"
         onClick={() => setActiveSection("partB")}
         className={`px-4 py-2 rounded-lg text-sm font-medium ${activeSection === "partB"
-            ? "bg-blue-100 text-blue-700 border border-blue-300"
-            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          ? "bg-blue-100 text-blue-700 border border-blue-300"
+          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
       >
         Part B: HR
@@ -538,8 +538,8 @@ const LeavesPage: React.FC = () => {
         type="button"
         onClick={() => setActiveSection("partC")}
         className={`px-4 py-2 rounded-lg text-sm font-medium ${activeSection === "partC"
-            ? "bg-blue-100 text-blue-700 border border-blue-300"
-            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          ? "bg-blue-100 text-blue-700 border border-blue-300"
+          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
       >
         Part C: Supervisor
@@ -548,8 +548,8 @@ const LeavesPage: React.FC = () => {
         type="button"
         onClick={() => setActiveSection("partD")}
         className={`px-4 py-2 rounded-lg text-sm font-medium ${activeSection === "partD"
-            ? "bg-blue-100 text-blue-700 border border-blue-300"
-            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+          ? "bg-blue-100 text-blue-700 border border-blue-300"
+          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
           }`}
       >
         Part D: Final Approval
@@ -609,8 +609,26 @@ const LeavesPage: React.FC = () => {
     );
   }
 
-  function handleApprove(leaveId: string): void {
-    throw new Error("Function not implemented.");
+  async function  handleApprove(leaveId: string): Promise<void> {
+    if (!user?.id) return;
+
+    setProcessing(leaveId)
+    try {
+      const result = await approveLeaveRequest(leaveId, user.id, `Approved By ${user.first_name}&nbsp;${user.last_name}`)
+      if (result.success) {
+        toast.success("Leave Approval Successful")
+        fetchLeaves(employeeId)
+      }
+      else {
+        toast.error(result.error || "Failed To Process Leave Approval")
+      }
+    }
+    catch (err) {
+      console.error("Error rejecting leave:", err);
+      toast.error("Failed to reject leave request");
+    } finally {
+      setProcessing(null);
+    }
   }
 
   async function handleReject(leaveId: string): Promise<void> {

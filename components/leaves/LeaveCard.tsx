@@ -24,6 +24,18 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
   // Access the employee data from employeeId (which is the populated Employee object)
   const employeeDetails = leave.employeeId;
 
+  const handleApprove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onApprove(leave._id);
+  };
+
+  const handleReject = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onReject(leave._id);
+  };
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case "approved":
@@ -198,17 +210,19 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
           {isAdmin && leave.status === "pending" && (
             <div className="flex flex-col space-y-2 min-w-[200px] lg:ml-4">
               <Button
+                type="button"
                 size="sm"
-                onClick={() => onApprove(leave._id)}
+                onClick={handleApprove}
                 disabled={!!processing}
                 className="w-full"
               >
                 {processing === leave._id ? "Approving..." : "Approve"}
               </Button>
               <Button
+                type="button"
                 size="sm"
                 variant="destructive"
-                onClick={() => onReject(leave._id)}
+                onClick={handleReject}
                 disabled={!!processing}
                 className="w-full"
               >
