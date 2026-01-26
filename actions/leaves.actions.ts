@@ -70,7 +70,7 @@ const normalizeObjectId = (id: string | ObjectId): ObjectId => {
 };
 
 // 🔹 Calculate total days between two dates (inclusive)
-export const calculateTotalDays = (startDate: Date, endDate: Date): number => {
+export const calculateTotalDays = async (startDate: Date, endDate: Date): Promise<number> => {
   // Make copies to avoid mutating original dates
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -266,7 +266,7 @@ export const createLeaveRequest = async (
       } else {
         // Check if employee has enough leave days
         const availableDays = balance.allocated - balance.used;
-        if (availableDays < days) {
+        if (availableDays < await days) {
           throw new Error(`Insufficient leave balance. Available: ${availableDays} days, Requested: ${days} days`);
         }
       }
@@ -816,6 +816,7 @@ export const getRemainingLeaveDays = async (employeeId: string): Promise<number>
 };
 
 // 🔹 Check if employee has enough leave days
+// 🔹 Check if employee has enough leave days
 export const validateLeaveRequest = async (
   employeeId: string,
   startDate: Date,
@@ -823,7 +824,8 @@ export const validateLeaveRequest = async (
   leaveType: string
 ): Promise<{ valid: boolean; availableDays: number; requestedDays: number; message?: string }> => {
   try {
-    const requestedDays = calculateTotalDays(startDate, endDate);
+    // 🔹 FIX: Add 'await' here
+    const requestedDays = await calculateTotalDays(startDate, endDate);
 
     console.log("🔍 Validating leave request:", {
       employeeId,
@@ -839,14 +841,14 @@ export const validateLeaveRequest = async (
       console.log("📊 Validation result:", {
         remainingDays,
         requestedDays,
-        hasEnough: remainingDays >= requestedDays
+        hasEnough: remainingDays >= requestedDays  // 🔹 FIX: removed await here
       });
 
-      if (remainingDays < requestedDays) {
+      if (remainingDays < requestedDays) {  // 🔹 FIX: removed await here
         return {
           valid: false,
           availableDays: remainingDays,
-          requestedDays,
+          requestedDays: requestedDays,  // 🔹 FIX: not awaiting here
           message: `Insufficient leave balance. Available: ${remainingDays} days, Requested: ${requestedDays} days`
         };
       }
@@ -855,7 +857,7 @@ export const validateLeaveRequest = async (
     return {
       valid: true,
       availableDays: leaveType === "Annual" ? await getRemainingLeaveDays(employeeId) : -1,
-      requestedDays
+      requestedDays: requestedDays  // 🔹 FIX: not awaiting here
     };
   } catch (error: any) {
     console.error("❌ Error validating leave request:", error);
@@ -867,7 +869,6 @@ export const validateLeaveRequest = async (
     };
   }
 };
-
 // ===================== REPORTS =====================
 
 // 🔹 Leave Report
