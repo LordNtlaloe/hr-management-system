@@ -17,12 +17,15 @@ import { Modal } from "@/components/ui/modal";
 import {
   getEmployeeLeaveRequests,
   createLeaveRequest,
+  validateLeaveRequest,
+  getRemainingLeaveDays,
 } from "@/actions/leaves.actions";
 import { getEmployeeByUserId, getEmployeeById } from "@/actions/employee.actions";
 import { useCurrentRole } from "@/hooks/use-current-role";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { AlertCircle, CalendarDays, Clock } from "lucide-react";
+import { AlertCircle, CalendarDays, Clock, CheckCircle, XCircle } from "lucide-react";
 import { PartAData, PartBData } from "@/schemas";
+import { toast } from "sonner"; // Import Sonner toast
 
 export enum LeaveType {
   ANNUAL = "Annual",
@@ -80,6 +83,15 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null);
   const [isLoadingEmployeeData, setIsLoadingEmployeeData] = useState(false);
   const [activeSection, setActiveSection] = useState<"partA" | "partB" | "partC" | "partD">("partA");
+  const [remainingLeaveDays, setRemainingLeaveDays] = useState<number>(21);
+  const [validationError, setValidationError] = useState<string>("");
+  const [isValidating, setIsValidating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Get current date in YYYY-MM-DD format
+  const getCurrentDate = () => {
+    return new Date().toISOString().split('T')[0];
+  };
 
   // Part A: Employee Section - Pre-filled with employee data
   const [partA, setPartA] = useState({
@@ -93,7 +105,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
     phoneNumber: "",
     email: "",
     currentAddress: "",
-    dateOfRequest: new Date().toISOString().split('T')[0],
+    dateOfRequest: getCurrentDate(), // Always current date
     employeeSignature: "",
   });
 
@@ -130,7 +142,26 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
   const isSupervisor = role === "Manager";
   const isAdmin = role === "Admin";
 
-  // Initialize leave form with employee data (similar to EmployeeTimeline)
+  // Load remaining leave days
+  const loadRemainingLeaveDays = async (targetEmployeeId: string) => {
+    try {
+      const remaining = await getRemainingLeaveDays(targetEmployeeId);
+      setRemainingLeaveDays(remaining);
+      
+      // Update Part B with current balance
+      setPartB(prev => ({
+        ...prev,
+        annualLeaveDays: 21, // Default allocation
+        remainingLeaveDays: remaining
+      }));
+      
+      console.log("📊 Loaded remaining leave days:", remaining);
+    } catch (error) {
+      console.error("Failed to load remaining leave days:", error);
+    }
+  };
+
+  // Initialize leave form with employee data
   const initializeLeaveFormWithEmployeeData = (employee: EmployeeData) => {
     if (!employee?.employee_details) {
       console.log("No employee details found in calendar");
@@ -139,13 +170,11 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
 
     const employeeDetails = employee.employee_details;
     const employeeName = `${employeeDetails.other_names || ''} ${employeeDetails.surname || ''}`.trim();
-    const employmentNumber = employee.employee_number;
+    const employmentNumber = employee.employee_number || "";
     const employeePosition = employeeDetails.position || "";
     const phoneNumber = employeeDetails.telephone || "";
     const email = employeeDetails.email || "";
     const currentAddress = employeeDetails.current_address || "";
-
-    console.log(employmentNumber)
 
     console.log("Calendar: Initializing form with employee data:", {
       employeeName,
@@ -164,6 +193,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
       phoneNumber,
       email,
       currentAddress,
+      dateOfRequest: getCurrentDate(), // Always current date
     }));
   };
 
@@ -178,6 +208,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
       if (employee) {
         setEmployeeData(employee);
         initializeLeaveFormWithEmployeeData(employee);
+        await loadRemainingLeaveDays(targetEmployeeId);
       } else {
         console.error("Calendar: No employee data returned");
       }
@@ -233,11 +264,91 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
         }
       } catch (error) {
         console.error("Failed to fetch leave events", error);
+        toast.error("Failed to load leave requests", {
+          description: "Please try again later.",
+          duration: 4000,
+        });
       }
     };
 
     fetchLeaveEvents();
   }, [employeeId, isEmployee]);
+
+  const calculateDaysDifference = (start: Date, end: Date) => {
+    // Reset time portions to compare only dates
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+    
+    // Calculate difference in milliseconds
+    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+    
+    // Convert to days and add 1 to include both start and end dates
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    console.log("📅 Calendar day calculation:", {
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      diffDays
+    });
+    
+    return diffDays;
+  };
+
+  const validateLeaveDates = async (startDateStr: string, endDateStr: string) => {
+    if (!startDateStr || !endDateStr || !employeeId) return;
+
+    setIsValidating(true);
+    setValidationError("");
+
+    try {
+      const startDate = new Date(startDateStr);
+      const endDate = new Date(endDateStr);
+      
+      // Basic date validation
+      if (startDate > endDate) {
+        const errorMsg = "Start date cannot be after end date";
+        setValidationError(errorMsg);
+        toast.error("Date Error", {
+          description: errorMsg,
+          duration: 4000,
+        });
+        return;
+      }
+
+      const validation = await validateLeaveRequest(
+        employeeId,
+        startDate,
+        endDate,
+        "Annual"
+      );
+
+      if (!validation.valid) {
+        setValidationError(validation.message || "Invalid leave request");
+        if (validation.message) {
+          toast.error("Leave Balance Insufficient", {
+            description: validation.message,
+            duration: 5000,
+          });
+        }
+      } else {
+        setValidationError("");
+        // Update remaining days display
+        setRemainingLeaveDays(validation.availableDays);
+      }
+    } catch (error: any) {
+      const errorMsg = error.message || "Validation failed";
+      setValidationError(errorMsg);
+      toast.error("Validation Error", {
+        description: errorMsg,
+        duration: 4000,
+      });
+    } finally {
+      setIsValidating(false);
+    }
+  };
 
   const handleDateSelect = async (selectInfo: DateSelectArg) => {
     if (!isEmployee) return;
@@ -252,14 +363,26 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
     resetModalFields();
 
     const startDateStr = selectInfo.startStr;
-    const endDateStr = selectInfo.endStr ? new Date(selectInfo.endStr).toISOString().split('T')[0] : startDateStr;
-    const numberOfDays = calculateDaysDifference(new Date(startDateStr), new Date(endDateStr));
+    const endDateStr = selectInfo.endStr ? 
+      new Date(new Date(selectInfo.endStr).getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0] : 
+      startDateStr;
+    
+    const startDate = new Date(startDateStr);
+    const endDate = new Date(endDateStr);
+    const numberOfDays = calculateDaysDifference(startDate, endDate);
+
+    console.log("📅 Date selection:", {
+      startDateStr,
+      endDateStr,
+      numberOfDays
+    });
 
     setPartA(prev => ({
       ...prev,
       startDate: startDateStr,
       endDate: endDateStr,
       numberOfLeaveDays: numberOfDays,
+      dateOfRequest: getCurrentDate(), // Always current date
     }));
 
     // Auto-update Part B deducted days
@@ -268,6 +391,9 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
       deductedDays: numberOfDays,
       remainingLeaveDays: prev.annualLeaveDays - numberOfDays,
     }));
+
+    // Validate leave request
+    await validateLeaveDates(startDateStr, endDateStr);
 
     openModal();
   };
@@ -282,13 +408,23 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
     setActiveSection("partA");
   };
 
-  const handlePartAChange = (field: string, value: any) => {
-    setPartA(prev => ({ ...prev, [field]: value }));
+  const handlePartAChange = async (field: string, value: any) => {
+    const updatedPartA = { ...partA, [field]: value };
+    setPartA(updatedPartA);
 
     // Recalculate days if dates change
-    if ((field === "startDate" || field === "endDate") && partA.startDate && partA.endDate) {
-      const numberOfDays = calculateDaysDifference(new Date(partA.startDate), new Date(partA.endDate));
-      setPartA(prev => ({ ...prev, numberOfLeaveDays: numberOfDays }));
+    if ((field === "startDate" || field === "endDate") && 
+        updatedPartA.startDate && updatedPartA.endDate) {
+      
+      const startDate = new Date(updatedPartA.startDate);
+      const endDate = new Date(updatedPartA.endDate);
+      const numberOfDays = calculateDaysDifference(startDate, endDate);
+      
+      setPartA(prev => ({ 
+        ...prev, 
+        [field]: value,
+        numberOfLeaveDays: numberOfDays 
+      }));
 
       // Update Part B
       setPartB(prev => ({
@@ -296,6 +432,9 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
         deductedDays: numberOfDays,
         remainingLeaveDays: prev.annualLeaveDays - numberOfDays,
       }));
+
+      // Validate leave request
+      await validateLeaveDates(updatedPartA.startDate, updatedPartA.endDate);
     }
   };
 
@@ -313,16 +452,43 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
   const handleSubmitLeaveRequest = async () => {
     if (!employeeId) {
       console.error("No employeeId found for user");
+      toast.error("Submission Failed", {
+        description: "Employee information not found. Please refresh the page.",
+        duration: 5000,
+      });
       return;
     }
 
     try {
+      setIsSubmitting(true);
+      
+      // Show loading toast
+      const loadingToastId = toast.loading("Submitting leave request...", {
+        description: "Please wait while we process your request.",
+      });
+
+      // Final validation before submission
+      const startDate = new Date(partA.startDate);
+      const endDate = new Date(partA.endDate);
+      const validation = await validateLeaveRequest(employeeId, startDate, endDate, "Annual");
+      
+      if (!validation.valid) {
+        setValidationError(validation.message || "Invalid leave request");
+        toast.dismiss(loadingToastId);
+        toast.error("Submission Failed", {
+          description: validation.message || "Invalid leave request",
+          duration: 5000,
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       const leaveData = {
         employeeId,
-        leaveType: partA.numberOfLeaveDays > partB.annualLeaveDays ? LeaveType.UNPAID : LeaveType.ANNUAL,
-        startDate: new Date(partA.startDate),
-        endDate: new Date(partA.endDate),
-        reason: partA.locationDuringLeave, // Using location as reason for now
+        leaveType: partA.numberOfLeaveDays > remainingLeaveDays ? LeaveType.UNPAID : LeaveType.ANNUAL,
+        startDate: startDate,
+        endDate: endDate,
+        reason: partA.locationDuringLeave || "Annual leave request",
         days: partA.numberOfLeaveDays,
         // Include the form data for the new schema
         formData: {
@@ -333,7 +499,12 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
         }
       };
 
+      console.log("📤 Submitting leave request:", leaveData);
+
       const result = await createLeaveRequest(leaveData);
+
+      // Dismiss loading toast
+      toast.dismiss(loadingToastId);
 
       if (result.success) {
         const newEvent: LeaveEvent = {
@@ -349,19 +520,47 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
           },
         };
         setEvents((prev) => [...prev, newEvent]);
+        
+        // Show success toast
+        toast.success("Leave Request Submitted Successfully!", {
+          description: `Your ${leaveData.leaveType} leave request for ${partA.numberOfLeaveDays} days has been submitted. Request ID: ${result.insertedId?.substring(0, 8)}...`,
+          duration: 6000,
+          action: {
+            label: "View",
+            onClick: () => {
+              // You could add navigation here if needed
+              console.log("View leave request clicked");
+            },
+          },
+        });
+        
         closeModal();
         resetModalFields();
+        
+        // Refresh remaining leave days
+        await loadRemainingLeaveDays(employeeId);
       } else {
         console.error("Failed to create leave request:", result.error);
+        setValidationError(result.error || "Failed to submit leave request");
+        
+        // Show error toast
+        toast.error("Submission Failed", {
+          description: result.error || "Failed to submit leave request. Please try again.",
+          duration: 5000,
+        });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to submit leave request", error);
+      setValidationError(error.message || "An error occurred");
+      
+      // Show error toast
+      toast.error("Unexpected Error", {
+        description: error.message || "An unexpected error occurred. Please try again.",
+        duration: 5000,
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-  };
-
-  const calculateDaysDifference = (start: Date, end: Date) => {
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
   const resetModalFields = () => {
@@ -376,7 +575,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
       startDate: "",
       endDate: "",
       locationDuringLeave: "",
-      dateOfRequest: new Date().toISOString().split('T')[0],
+      dateOfRequest: getCurrentDate(), // Always current date
       employeeSignature: "",
     }));
 
@@ -401,6 +600,8 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
       approverSignature: "",
     });
 
+    setValidationError("");
+    setIsValidating(false);
     setSelectedLeave(null);
     setActiveSection("partA");
   };
@@ -431,6 +632,24 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
       }
     }
     return true;
+  };
+
+  const renderEventContent = (eventInfo: EventContentArg) => {
+    const status = eventInfo.event.extendedProps.status;
+    const bgColor = status === "approved" ? "bg-green-100" : 
+                    status === "pending" ? "bg-yellow-100" : 
+                    status === "rejected" ? "bg-red-100" : "bg-blue-100";
+    
+    const textColor = status === "approved" ? "text-green-800" : 
+                     status === "pending" ? "text-yellow-800" : 
+                     status === "rejected" ? "text-red-800" : "text-blue-800";
+    
+    return (
+      <div className={`${bgColor} ${textColor} p-1 rounded text-xs`}>
+        <strong>{eventInfo.event.title}</strong>
+        <div>{status}</div>
+      </div>
+    );
   };
 
   const renderSectionNavigation = () => (
@@ -484,33 +703,69 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
     </div>
   );
 
+  const renderLeaveBalanceInfo = () => (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+      <div className="flex justify-between items-center">
+        <div>
+          <h4 className="font-medium text-blue-800 mb-1">Leave Balance Information</h4>
+          <p className="text-sm text-blue-600">
+            Annual Leave: {remainingLeaveDays} days remaining out of 21
+          </p>
+        </div>
+        <div className="flex items-center space-x-2">
+          {isValidating ? (
+            <div className="flex items-center text-blue-600">
+              <Clock className="h-4 w-4 animate-spin mr-1" />
+              <span className="text-sm">Validating...</span>
+            </div>
+          ) : validationError ? (
+            <div className="flex items-center text-red-600">
+              <XCircle className="h-4 w-4 mr-1" />
+              <span className="text-sm">{validationError}</span>
+            </div>
+          ) : partA.startDate && partA.endDate ? (
+            <div className="flex items-center text-green-600">
+              <CheckCircle className="h-4 w-4 mr-1" />
+              <span className="text-sm">
+                {partA.numberOfLeaveDays} days selected. {remainingLeaveDays - partA.numberOfLeaveDays} days will remain.
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderEmployeeInformationSummary = () => (
     employeeData?.employee_details && (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-        <h4 className="font-medium text-blue-800 mb-2">Employee Information</h4>
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+        <h4 className="font-medium text-green-800 mb-2">Employee Information</h4>
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div>
-            <span className="text-blue-600">Name:</span> {partA.employeeName}
+            <span className="text-green-600">Name:</span> {partA.employeeName}
           </div>
           <div>
-            <span className="text-blue-600">Employment #:</span> {partA.employmentNumber}
+            <span className="text-green-600">Employment #:</span> {partA.employmentNumber}
           </div>
           <div>
-            <span className="text-blue-600">Position:</span> {partA.employeePosition}
+            <span className="text-green-600">Position:</span> {partA.employeePosition}
           </div>
           <div>
-            <span className="text-blue-600">Phone:</span> {partA.phoneNumber}
+            <span className="text-green-600">Phone:</span> {partA.phoneNumber}
           </div>
           {partA.email && (
             <div>
-              <span className="text-blue-600">Email:</span> {partA.email}
+              <span className="text-green-600">Email:</span> {partA.email}
             </div>
           )}
           {partA.currentAddress && (
             <div className="col-span-2">
-              <span className="text-blue-600">Address:</span> {partA.currentAddress}
+              <span className="text-green-600">Address:</span> {partA.currentAddress}
             </div>
           )}
+          <div className="col-span-2 mt-2 pt-2 border-t border-green-200">
+            <span className="text-green-600">Date of Request:</span> {partA.dateOfRequest}
+          </div>
         </div>
       </div>
     )
@@ -530,6 +785,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
         </div>
       )}
 
+      {renderLeaveBalanceInfo()}
       {renderEmployeeInformationSummary()}
 
       <div className="grid grid-cols-2 gap-4">
@@ -614,6 +870,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
             required
+            min={new Date().toISOString().split('T')[0]}
           />
         </div>
 
@@ -628,6 +885,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
             required
+            min={partA.startDate || new Date().toISOString().split('T')[0]}
           />
         </div>
 
@@ -640,7 +898,11 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             value={partA.numberOfLeaveDays}
             className="h-11 w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-800"
             disabled
+            readOnly
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Calculated automatically from dates
+          </p>
         </div>
 
         <div className="col-span-2">
@@ -670,10 +932,13 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
           <input
             type="date"
             value={partA.dateOfRequest}
-            onChange={(e) => handlePartAChange("dateOfRequest", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            disabled={!!selectedLeave}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-800"
+            readOnly
+            disabled
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Automatically set to today's date
+          </p>
         </div>
 
         <div className="col-span-2">
@@ -709,9 +974,11 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
           <input
             type="number"
             value={partB.annualLeaveDays}
-            onChange={(e) => handlePartBChange("annualLeaveDays", parseInt(e.target.value))}
+            onChange={(e) => handlePartBChange("annualLeaveDays", parseInt(e.target.value) || 0)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
+            min="0"
+            max="365"
           />
         </div>
 
@@ -722,9 +989,11 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
           <input
             type="number"
             value={partB.deductedDays}
-            onChange={(e) => handlePartBChange("deductedDays", parseInt(e.target.value))}
+            onChange={(e) => handlePartBChange("deductedDays", parseInt(e.target.value) || 0)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
+            min="0"
+            max={partB.annualLeaveDays}
           />
         </div>
 
@@ -735,9 +1004,15 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
           <input
             type="number"
             value={partB.remainingLeaveDays}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            className="h-11 w-full rounded-lg border border-gray-300 bg-gray-100 px-4 py-2.5 text-sm text-gray-800"
             disabled
+            readOnly
           />
+          <p className="text-xs text-gray-500 mt-1">
+            {partB.remainingLeaveDays < 0 ? 
+              "⚠️ Negative balance! Employee will go into leave debt." : 
+              "Calculated automatically"}
+          </p>
         </div>
 
         <div>
@@ -750,6 +1025,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             onChange={(e) => handlePartBChange("dateOfApproval", e.target.value)}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
+            max={new Date().toISOString().split('T')[0]}
           />
         </div>
 
@@ -815,6 +1091,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             onChange={(e) => setPartC(prev => ({ ...prev, dateOfReview: e.target.value }))}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
+            max={new Date().toISOString().split('T')[0]}
           />
         </div>
 
@@ -866,6 +1143,7 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             onChange={(e) => setPartD(prev => ({ ...prev, dateOfDecision: e.target.value }))}
             className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
             disabled={!!selectedLeave}
+            max={new Date().toISOString().split('T')[0]}
           />
         </div>
 
@@ -903,32 +1181,45 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-      <div className="custom-calendar">
+      <div className="p-4 border-b">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-semibold text-gray-800">Leave Calendar</h2>
+          {isEmployee && (
+            <div className="flex items-center space-x-4">
+              <div className="bg-blue-50 px-3 py-2 rounded-lg">
+                <span className="text-sm text-blue-600">
+                  Remaining Annual Leave: <strong>{remainingLeaveDays}</strong> days
+                </span>
+              </div>
+              <button
+                onClick={openModal}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                disabled={isSubmitting}
+              >
+                Request Leave +
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="custom-calendar p-4">
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="dayGridMonth"
           headerToolbar={{
-            left: "prev,next" + (isEmployee ? " requestLeaveButton" : ""),
+            left: "prev,next today",
             center: "title",
             right: "dayGridMonth,timeGridWeek,timeGridDay",
           }}
           events={events}
-          selectable={isEmployee}
+          selectable={isEmployee && !isSubmitting}
           select={handleDateSelect}
           eventClick={handleEventClick}
           eventContent={renderEventContent}
           selectAllow={isSelectable}
-          customButtons={
-            isEmployee
-              ? {
-                requestLeaveButton: {
-                  text: "Request Leave +",
-                  click: openModal,
-                },
-              }
-              : undefined
-          }
+          height="auto"
         />
       </div>
 
@@ -955,10 +1246,20 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
             {renderCurrentSection()}
           </div>
 
+          {validationError && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center text-red-700">
+                <AlertCircle className="h-5 w-5 mr-2" />
+                <span className="text-sm font-medium">{validationError}</span>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-3 mt-8 sm:justify-end">
             <button
               onClick={handleModalClose}
               className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              disabled={isSubmitting}
             >
               Close
             </button>
@@ -967,9 +1268,23 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
               <button
                 onClick={handleSubmitLeaveRequest}
                 className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                disabled={!partA.employeeName || !partA.startDate || !partA.endDate || !partA.employeeSignature || isLoadingEmployeeData}
+                disabled={
+                  !partA.employeeName || 
+                  !partA.startDate || 
+                  !partA.endDate || 
+                  !partA.employeeSignature || 
+                  isLoadingEmployeeData || 
+                  isValidating ||
+                  !!validationError ||
+                  isSubmitting
+                }
               >
-                {isLoadingEmployeeData ? "Loading..." : "Submit Request"}
+                {isSubmitting ? (
+                  <span className="flex items-center">
+                    <Clock className="h-4 w-4 animate-spin mr-2" />
+                    Submitting...
+                  </span>
+                ) : isLoadingEmployeeData ? "Loading..." : isValidating ? "Validating..." : "Submit Request"}
               </button>
             )}
 
@@ -983,35 +1298,14 @@ const Calendar: React.FC<CalendarProps> = ({ employeeId: propEmployeeId }) => {
                   else handleSubmitLeaveRequest();
                 }}
                 className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+                disabled={isValidating || isSubmitting}
               >
-                {activeSection === "partD" ? "Complete Review" : "Save & Continue"}
+                {isSubmitting ? "Submitting..." : activeSection === "partD" ? "Complete Review" : "Save & Continue"}
               </button>
             )}
           </div>
         </div>
       </Modal>
-    </div>
-  );
-};
-
-const renderEventContent = (eventInfo: EventContentArg) => {
-  const status = eventInfo.event.extendedProps.status;
-  const colorClass =
-    status === "approved"
-      ? "success"
-      : status === "rejected"
-        ? "danger"
-        : "warning";
-
-  return (
-    <div
-      className={`event-fc-color flex fc-event-main ${colorClass} p-1 rounded-sm`}
-    >
-      <div className="fc-daygrid-event-dot"></div>
-      <div className="fc-event-title">{eventInfo.event.title}</div>
-      {eventInfo.event.extendedProps.status === "pending" && (
-        <div className="fc-event-status">(Pending)</div>
-      )}
     </div>
   );
 };

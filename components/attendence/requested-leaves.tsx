@@ -22,6 +22,7 @@ interface RequestedLeavesProps {
   showOnlyPending?: boolean;
   employeeId?: string;
 }
+
 /**
  * Converts raw leave requests into LeaveWithEmployee
  */
@@ -150,17 +151,33 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
 
   // Approve
   const handleApprove = async (leaveId: string) => {
-    if (!isAdmin || !user?.id) return;
+    if (!isAdmin || !user?.id) {
+      console.error("Unauthorized: User must be admin");
+      return;
+    }
+
+    // Prevent multiple simultaneous actions
+    if (processing) {
+      console.log("Another action is in progress, please wait");
+      return;
+    }
 
     try {
+      console.log("Starting approval process for leave:", leaveId);
       setProcessing(`approve-${leaveId}`);
+
       const result = await approveLeaveRequest(leaveId, user.id);
 
       if (result.success) {
+        console.log("Leave approved successfully");
         await fetchData();
+      } else {
+        console.error("Failed to approve leave:", result.error);
+        alert("Failed to approve leave request. Please try again.");
       }
     } catch (error) {
       console.error("Failed to approve leave:", error);
+      alert("An error occurred while approving the leave request.");
     } finally {
       setProcessing(null);
     }
@@ -168,16 +185,28 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
 
   // Reject
   const openRejectDialog = (leaveId: string) => {
+    // Prevent opening dialog if another action is in progress
+    if (processing) {
+      console.log("Another action is in progress, please wait");
+      return;
+    }
+
+    console.log("Opening reject dialog for leave:", leaveId);
     setSelectedLeaveId(leaveId);
     setRejectionReason("");
     setRejectDialogOpen(true);
   };
 
   const handleReject = async () => {
-    if (!isAdmin || !user?.id || !selectedLeaveId) return;
+    if (!isAdmin || !user?.id || !selectedLeaveId) {
+      console.error("Cannot reject: missing admin status, user ID, or leave ID");
+      return;
+    }
 
     try {
+      console.log("Starting rejection process for leave:", selectedLeaveId);
       setProcessing(`reject-${selectedLeaveId}`);
+
       const result = await rejectLeaveRequest(
         selectedLeaveId,
         user.id,
@@ -185,11 +214,18 @@ const RequestedLeaves: React.FC<RequestedLeavesProps> = ({
       );
 
       if (result.success) {
+        console.log("Leave rejected successfully");
         await fetchData();
         setRejectDialogOpen(false);
+        setSelectedLeaveId(null);
+        setRejectionReason("");
+      } else {
+        console.error("Failed to reject leave:", result.error);
+        alert("Failed to reject leave request. Please try again.");
       }
     } catch (error) {
       console.error("Failed to reject leave:", error);
+      alert("An error occurred while rejecting the leave request.");
     } finally {
       setProcessing(null);
     }

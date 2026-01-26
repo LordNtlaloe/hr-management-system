@@ -682,7 +682,7 @@ const LeavesPage: React.FC = () => {
             <Users className="h-4 w-4" /> All Requests ({allLeaves.length})
           </TabsTrigger>
           <TabsTrigger value="calendar" className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4" /> Team Calendar
+            <CalendarDays className="h-4 w-4" /> Approved
           </TabsTrigger>
           <TabsTrigger value="approvals" className="flex items-center gap-2">
             <FileCheck className="h-4 w-4" /> Multi-Section Approvals

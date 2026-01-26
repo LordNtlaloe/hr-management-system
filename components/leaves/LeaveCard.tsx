@@ -27,12 +27,14 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
   const handleApprove = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log("Approve clicked for leave:", leave._id);
     onApprove(leave._id);
   };
 
   const handleReject = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    console.log("Reject clicked for leave:", leave._id);
     onReject(leave._id);
   };
 
@@ -80,6 +82,9 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
       .toUpperCase()
       .slice(0, 2);
   };
+
+  const isApproving = processing === `approve-${leave._id}`;
+  const isRejecting = processing === `reject-${leave._id}`;
 
   return (
     <Card className="hover:shadow-md transition-shadow duration-200">
@@ -213,20 +218,20 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                 type="button"
                 size="sm"
                 onClick={handleApprove}
-                disabled={!!processing}
-                className="w-full"
+                disabled={isApproving || isRejecting}
+                className="w-full bg-green-600 hover:bg-green-700 text-white"
               >
-                {processing === leave._id ? "Approving..." : "Approve"}
+                {isApproving ? "Approving..." : "Approve"}
               </Button>
               <Button
                 type="button"
                 size="sm"
                 variant="destructive"
                 onClick={handleReject}
-                disabled={!!processing}
+                disabled={isApproving || isRejecting}
                 className="w-full"
               >
-                {processing === leave._id ? "Rejecting..." : "Reject"}
+                {isRejecting ? "Rejecting..." : "Reject"}
               </Button>
             </div>
           )}

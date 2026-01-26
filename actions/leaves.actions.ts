@@ -69,7 +69,33 @@ const normalizeObjectId = (id: string | ObjectId): ObjectId => {
   throw new Error(`Invalid ObjectId: ${id}`);
 };
 
-// 🔹 Get Employee Leave Requests - IMPROVED VERSION
+// 🔹 Calculate total days between two dates (inclusive)
+export const calculateTotalDays = (startDate: Date, endDate: Date): number => {
+  // Make copies to avoid mutating original dates
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  // Reset time portions to compare only dates
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  // Calculate difference in milliseconds
+  const diffTime = Math.abs(end.getTime() - start.getTime());
+
+  // Convert to days and add 1 to include both start and end dates
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  console.log("📅 Day calculation:", {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    diffTime,
+    diffDays
+  });
+
+  return diffDays;
+};
+
+// 🔹 Get Employee Leave Requests
 export const getEmployeeLeaveRequests = async (
   employeeId: string,
   status?: string
@@ -85,9 +111,7 @@ export const getEmployeeLeaveRequests = async (
     // Build filter condition
     const filter: any = {};
 
-    // Handle employeeId - try multiple approaches
     try {
-      // First try to normalize as ObjectId
       filter.employeeId = normalizeObjectId(employeeId);
       console.log("✅ Using normalized ObjectId for employeeId");
     } catch (error) {
@@ -95,7 +119,6 @@ export const getEmployeeLeaveRequests = async (
       filter.employeeId = employeeId;
     }
 
-    // Add status filter if provided
     if (status && status !== "all") {
       filter.status = status;
     }
@@ -107,7 +130,6 @@ export const getEmployeeLeaveRequests = async (
         { $match: filter },
         {
           $addFields: {
-            // Handle both string and ObjectId employeeId for lookup
             employeeObjectId: {
               $cond: {
                 if: { $eq: [{ $type: "$employeeId" }, "string"] },
@@ -133,7 +155,6 @@ export const getEmployeeLeaveRequests = async (
         },
         {
           $addFields: {
-            // Use the employee data if found, otherwise keep original employeeId
             employeeId: {
               $cond: {
                 if: { $gt: [{ $size: "$employeeData" }, 0] },
@@ -157,7 +178,6 @@ export const getEmployeeLeaveRequests = async (
 
     const serializedLeaves = serializeDocument(leaves);
 
-    // Log first leave request for debugging
     if (serializedLeaves.length > 0) {
       console.log("📄 Sample leave request:", {
         id: serializedLeaves[0]._id,
@@ -166,6 +186,7 @@ export const getEmployeeLeaveRequests = async (
         leaveType: serializedLeaves[0].leaveType,
         startDate: serializedLeaves[0].startDate,
         endDate: serializedLeaves[0].endDate,
+        days: serializedLeaves[0].days,
       });
     }
 
@@ -177,14 +198,16 @@ export const getEmployeeLeaveRequests = async (
   }
 };
 
-// 🔹 Create Leave Request with Part A Data
+// 🔹 Create Leave Request with validation
 export const createLeaveRequest = async (
   leaveData: any,
   partAData?: PartAData
 ) => {
   if (!dbConnection) await init();
+
   try {
     const collection = await database?.collection("leave_requests");
+    const balanceCollection = await database?.collection("leave_balances");
 
     if (!leaveData.employeeId) {
       throw new Error("employeeId is required");
@@ -197,10 +220,63 @@ export const createLeaveRequest = async (
       PartASchema.parse(partAData);
     }
 
+    // Calculate days properly
+    const startDate = new Date(leaveData.startDate);
+    const endDate = new Date(leaveData.endDate);
+    const days = calculateTotalDays(startDate, endDate);
+
+    console.log("📊 Leave request calculation:", {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      calculatedDays: days
+    });
+
+    // Check if it's annual leave (needs balance check)
+    if (leaveData.leaveType === "Annual" || leaveData.leaveType === "annual") {
+      // Get current year
+      const currentYear = new Date().getFullYear();
+
+      // Get employee's leave balance
+      const balance = await balanceCollection.findOne({
+        employeeId: employeeIdObj,
+        leaveType: "Annual",
+        year: currentYear
+      });
+
+      console.log("📊 Checking leave balance:", {
+        employeeId: employeeIdObj.toString(),
+        requestedDays: days,
+        currentBalance: balance ? (balance.allocated - balance.used) : 0,
+        allocated: balance?.allocated || 0,
+        used: balance?.used || 0
+      });
+
+      // If no balance record exists, create one
+      if (!balance) {
+        console.log("⚠️ No balance record found, creating default...");
+        await balanceCollection.insertOne({
+          employeeId: employeeIdObj,
+          leaveType: "Annual",
+          allocated: 21,
+          used: 0,
+          year: currentYear,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      } else {
+        // Check if employee has enough leave days
+        const availableDays = balance.allocated - balance.used;
+        if (availableDays < days) {
+          throw new Error(`Insufficient leave balance. Available: ${availableDays} days, Requested: ${days} days`);
+        }
+      }
+    }
+
     const leave = {
       ...leaveData,
       employeeId: employeeIdObj,
-      partAData: partAData || null, // Store Part A form data
+      days: days, // Use calculated days
+      partAData: partAData || null,
       status: "pending",
       appliedDate: new Date(),
       createdAt: new Date(),
@@ -212,7 +288,10 @@ export const createLeaveRequest = async (
     console.log("✅ Leave request created:", {
       insertedId: result.insertedId.toString(),
       employeeId: employeeIdObj.toString(),
-      leaveType: leaveData.leaveType
+      leaveType: leaveData.leaveType,
+      days: days,
+      startDate: leaveData.startDate,
+      endDate: leaveData.endDate
     });
 
     return { insertedId: result.insertedId.toString(), success: true };
@@ -329,15 +408,31 @@ export const updateLeaveRequest = async (id: string, updateData: any) => {
   }
 };
 
-// 🔹 Approve Leave Request
+// 🔹 Approve Leave Request with balance deduction
 export const approveLeaveRequest = async (
   id: string,
   approverId: string,
   comments?: string
 ) => {
   if (!dbConnection) await init();
+
   try {
     const collection = await database?.collection("leave_requests");
+    const balanceCollection = await database?.collection("leave_balances");
+
+    // First, get the leave request
+    const leaveRequest = await collection.findOne({ _id: new ObjectId(id) });
+
+    if (!leaveRequest) {
+      throw new Error("Leave request not found");
+    }
+
+    // Calculate days if not already calculated
+    const startDate = new Date(leaveRequest.startDate);
+    const endDate = new Date(leaveRequest.endDate);
+    const days = leaveRequest.days || calculateTotalDays(startDate, endDate);
+
+    // Update leave request status
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
       {
@@ -347,22 +442,68 @@ export const approveLeaveRequest = async (
           approvedDate: new Date(),
           approverComments: comments || "",
           updatedAt: new Date(),
+          days: days // Ensure days field is set
         },
       }
     );
 
     if (result.modifiedCount > 0) {
-      const leaveRequest = await collection.findOne({ _id: new ObjectId(id) });
-      if (leaveRequest) {
-        const employeeId =
-          typeof leaveRequest.employeeId === "string"
-            ? new ObjectId(leaveRequest.employeeId)
-            : leaveRequest.employeeId;
-        await updateLeaveBalance(
+      const employeeId = normalizeObjectId(leaveRequest.employeeId);
+
+      // Update leave balance for annual leave
+      if (leaveRequest.leaveType === "Annual" || leaveRequest.leaveType === "annual") {
+        const currentYear = new Date().getFullYear();
+
+        // Get current balance
+        const currentBalance = await balanceCollection.findOne({
           employeeId,
-          leaveRequest.leaveType,
-          leaveRequest.days
-        );
+          leaveType: "Annual",
+          year: currentYear
+        });
+
+        if (!currentBalance) {
+          // Create new balance record if none exists
+          await balanceCollection.insertOne({
+            employeeId,
+            leaveType: "Annual",
+            allocated: 21,
+            used: days,
+            year: currentYear,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        } else {
+          // Update existing balance
+          await balanceCollection.updateOne(
+            {
+              employeeId,
+              leaveType: "Annual",
+              year: currentYear
+            },
+            {
+              $inc: { used: days },
+              $set: { updatedAt: new Date() },
+            }
+          );
+        }
+
+        // Verify the balance update
+        const updatedBalance = await balanceCollection.findOne({
+          employeeId,
+          leaveType: "Annual",
+          year: currentYear
+        });
+
+        console.log("✅ Leave approved and balance updated:", {
+          leaveId: id,
+          employeeId: employeeId.toString(),
+          daysDeducted: days,
+          newBalance: updatedBalance ? {
+            allocated: updatedBalance.allocated,
+            used: updatedBalance.used,
+            remaining: updatedBalance.allocated - updatedBalance.used
+          } : "No balance record"
+        });
       }
     }
 
@@ -547,6 +688,39 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
     }
 
     const balances = await collection.find(query).toArray();
+
+    // If no balance exists for current year, create default
+    const currentYear = new Date().getFullYear();
+    const currentYearBalance = balances.find((b: any) => b.year === currentYear);
+
+    if (!currentYearBalance && query.employeeId) {
+      console.log("📊 Creating default balance for current year");
+      const defaultBalance = {
+        employeeId: normalizeObjectId(employeeId),
+        leaveType: "Annual",
+        allocated: 21,
+        used: 0,
+        year: currentYear,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await collection.insertOne(defaultBalance);
+      balances.push(defaultBalance);
+    }
+
+    console.log("📊 Employee leave balances:", {
+      employeeId,
+      currentYear,
+      balances: balances.map((b: any) => ({
+        leaveType: b.leaveType,
+        allocated: b.allocated,
+        used: b.used,
+        remaining: b.allocated - b.used,
+        year: b.year
+      }))
+    });
+
     return serializeDocument(balances);
   } catch (error: any) {
     console.error("❌ Error fetching employee leave balance:", error.message);
@@ -557,23 +731,32 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
 const updateLeaveBalance = async (
   employeeId: ObjectId,
   leaveType: string,
-  daysUsed: number,
-  session?: any
+  daysUsed: number
 ) => {
   try {
     const collection = await database?.collection("leave_balances");
+    const currentYear = new Date().getFullYear();
+
     const result = await collection.updateOne(
-      { employeeId, leaveType },
+      {
+        employeeId,
+        leaveType,
+        year: currentYear
+      },
       {
         $inc: { used: daysUsed },
         $set: { updatedAt: new Date() },
       },
-      { session }
+      { upsert: true }
     );
 
-    if (result.modifiedCount === 0) {
-      throw new Error("Leave balance not found");
-    }
+    console.log("📊 Leave balance updated:", {
+      employeeId: employeeId.toString(),
+      leaveType,
+      daysUsed,
+      modifiedCount: result.modifiedCount,
+      upsertedId: result.upsertedId
+    });
 
     return { success: true };
   } catch (error: any) {
@@ -599,6 +782,89 @@ export const resetLeaveBalances = async (year: number) => {
   } catch (error: any) {
     console.error("❌ Error resetting leave balances:", error.message);
     return { error: error.message };
+  }
+};
+
+// 🔹 Get remaining leave days for an employee
+export const getRemainingLeaveDays = async (employeeId: string): Promise<number> => {
+  try {
+    const balances = await getEmployeeLeaveBalance(employeeId);
+    const currentYear = new Date().getFullYear();
+
+    const annualBalance = balances.find((b: any) =>
+      b.leaveType === "Annual" && b.year === currentYear
+    );
+
+    if (annualBalance) {
+      const remaining = annualBalance.allocated - annualBalance.used;
+      console.log("📊 Remaining leave days:", {
+        employeeId,
+        allocated: annualBalance.allocated,
+        used: annualBalance.used,
+        remaining
+      });
+      return remaining;
+    }
+
+    // Return default if no balance found
+    console.log("📊 No balance found, returning default 21 days");
+    return 21;
+  } catch (error) {
+    console.error("❌ Error getting remaining leave days:", error);
+    return 21; // Default fallback
+  }
+};
+
+// 🔹 Check if employee has enough leave days
+export const validateLeaveRequest = async (
+  employeeId: string,
+  startDate: Date,
+  endDate: Date,
+  leaveType: string
+): Promise<{ valid: boolean; availableDays: number; requestedDays: number; message?: string }> => {
+  try {
+    const requestedDays = calculateTotalDays(startDate, endDate);
+
+    console.log("🔍 Validating leave request:", {
+      employeeId,
+      startDate,
+      endDate,
+      leaveType,
+      requestedDays
+    });
+
+    if (leaveType === "Annual" || leaveType === "annual") {
+      const remainingDays = await getRemainingLeaveDays(employeeId);
+
+      console.log("📊 Validation result:", {
+        remainingDays,
+        requestedDays,
+        hasEnough: remainingDays >= requestedDays
+      });
+
+      if (remainingDays < requestedDays) {
+        return {
+          valid: false,
+          availableDays: remainingDays,
+          requestedDays,
+          message: `Insufficient leave balance. Available: ${remainingDays} days, Requested: ${requestedDays} days`
+        };
+      }
+    }
+
+    return {
+      valid: true,
+      availableDays: leaveType === "Annual" ? await getRemainingLeaveDays(employeeId) : -1,
+      requestedDays
+    };
+  } catch (error: any) {
+    console.error("❌ Error validating leave request:", error);
+    return {
+      valid: false,
+      availableDays: 0,
+      requestedDays: 0,
+      message: error.message
+    };
   }
 };
 
@@ -934,20 +1200,18 @@ export const getEmployeeLeaveUtilization = async (
   }
 };
 
-// Add this function to your leave-actions.ts file
-
 // 🔹 Get Employee Activities (Leave Requests as Timeline)
 export const getEmployeeActivities = async (employeeId: string) => {
   if (!dbConnection) await init();
-  
+
   try {
     const collection = await database?.collection("leave_requests");
-    
+
     console.log("🔍 Fetching activities for employeeId:", employeeId);
-    
+
     // Build filter for this specific employee
     const filter: any = {};
-    
+
     try {
       filter.employeeId = normalizeObjectId(employeeId);
       console.log("✅ Using normalized ObjectId for employeeId");
@@ -955,15 +1219,15 @@ export const getEmployeeActivities = async (employeeId: string) => {
       console.log("❌ Could not normalize as ObjectId, using string employeeId");
       filter.employeeId = employeeId;
     }
-    
+
     // Fetch all leave requests for this employee
     const leaves = await collection
       .find(filter)
       .sort({ appliedDate: -1 }) // Most recent first
       .toArray();
-    
+
     console.log(`✅ Found ${leaves.length} leave activities for employee ${employeeId}`);
-    
+
     // Transform leave requests into activity format
     const activities = leaves.map((leave: LeaveRequest) => ({
       _id: leave._id,
@@ -986,7 +1250,7 @@ export const getEmployeeActivities = async (employeeId: string) => {
         rejectionReason: leave.rejectionReason,
       }
     }));
-    
+
     return serializeDocument(activities);
   } catch (error: any) {
     console.error("❌ Error fetching employee activities:", error.message);
