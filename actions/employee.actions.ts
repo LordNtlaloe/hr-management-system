@@ -28,25 +28,23 @@ const init = async () => {
   }
 };
 
-// Generate employee number
+// ----------------------
+// Generate Employee Number (Atomic - race-condition safe)
+// ----------------------
 const generateEmployeeNumber = async (): Promise<string> => {
   if (!dbConnection) await init();
-  const collection = await database?.collection("employees");
 
-  // Find the highest employee number
-  const lastEmployee = await collection
-    .find({ employee_number: { $regex: /^EMP-/ } })
-    .sort({ employee_number: -1 })
-    .limit(1)
-    .toArray();
+  const countersCollection = database?.collection("counters");
 
-  let nextNumber = 1;
-  if (lastEmployee.length > 0 && lastEmployee[0].employee_number) {
-    const lastNumber = parseInt(lastEmployee[0].employee_number.split("-")[1]);
-    nextNumber = lastNumber + 1;
-  }
+  // Atomically increment the counter and get the new value
+  const result = await countersCollection.findOneAndUpdate(
+    { _id: "employee_number" },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: "after" }
+  );
 
-  return `EMP-${nextNumber.toString().padStart(4, "0")}`;
+  const seq = result?.seq ?? 1;
+  return `EMP-${seq.toString().padStart(4, "0")}`;
 };
 
 // ----------------------
@@ -60,13 +58,13 @@ export const createEmployee = async (
     const collection = await database?.collection("employees");
     const parsed = EmployeeSchema.parse(employeeData);
 
-    // Generate employee number
+    // Generate employee number atomically
     const employeeNumber = await generateEmployeeNumber();
 
     const employee = {
       ...parsed,
       employee_number: employeeNumber,
-      email: employeeData.employee_details?.email, // Save email at top level
+      email: employeeData.employee_details?.email,
       createdAt: new Date(),
       updatedAt: new Date(),
       isActive: true,
@@ -141,7 +139,7 @@ export const getEmployeeById = async (id: string) => {
       ? {
           ...employee,
           _id: employee._id.toString(),
-          email: employee.email || employee.employee_details?.email, // Ensure email is returned
+          email: employee.email || employee.employee_details?.email,
         }
       : null;
   } catch (error: any) {
@@ -159,8 +157,7 @@ export const updateEmployee = async (
     if (!ObjectId.isValid(id)) return { error: "Invalid employee ID" };
     const collection = await database?.collection("employees");
 
-    // If updating email in employee_details, also update top-level email
-    const updatePayload = { ...updateData, updatedAt: new Date() };
+    const updatePayload: any = { ...updateData, updatedAt: new Date() };
     if (updateData.employee_details?.email) {
       updatePayload.email = updateData.employee_details.email;
     }
@@ -203,7 +200,7 @@ export const getAllEmployees = async (includeInactive = false) => {
     return employees.map((e: any) => ({
       ...e,
       _id: e._id.toString(),
-      email: e.email || e.employee_details?.email, // Ensure email is included
+      email: e.email || e.employee_details?.email,
     }));
   } catch (error: any) {
     console.error("Error fetching employees:", error.message);
@@ -228,13 +225,9 @@ export const updateEmployeeSection = async (
 
   const collection = await database?.collection("employees");
 
-  const updateQuery = section.includes(".")
-    ? { $set: { [section]: data, updatedAt: new Date() } } // nested
-    : { $set: { [section]: data, updatedAt: new Date() } }; // top-level
-
   const result = await collection.updateOne(
     { _id: new ObjectId(id) },
-    updateQuery
+    { $set: { [section]: data, updatedAt: new Date() } }
   );
 
   return { modifiedCount: result.modifiedCount, success: true };
@@ -279,7 +272,7 @@ export const getEmployeeDetailsById = async (id: string) => {
     const collection = await database?.collection("employees");
     const employee = await collection.findOne(
       { _id: new ObjectId(id) },
-      { projection: { employee_details: 1 } } // only return details
+      { projection: { employee_details: 1 } }
     );
 
     return employee
@@ -310,7 +303,6 @@ export const uploadProfilePicture = async (employeeId: string, file: File) => {
     console.log("6. Trimmed ID:", id);
     console.log("7. Is valid ObjectId?", ObjectId.isValid(id));
 
-    // Test if this specific ID can be converted to ObjectId
     try {
       const testObjectId = new ObjectId(id);
       console.log("8. Successfully created ObjectId:", testObjectId.toString());
@@ -324,7 +316,6 @@ export const uploadProfilePicture = async (employeeId: string, file: File) => {
       );
     }
 
-    // Check if employee exists using the same ID
     const collection = database.collection("employees");
     console.log("9. Checking if employee exists with ID:", id);
 
@@ -335,11 +326,9 @@ export const uploadProfilePicture = async (employeeId: string, file: File) => {
       throw new Error(`Employee not found with ID: ${id}`);
     }
 
-    // Convert file to buffer
     const buffer = Buffer.from(await file.arrayBuffer());
     console.log("11. File buffer created, size:", buffer.length);
 
-    // Upload to Cloudinary
     console.log("12. Starting Cloudinary upload...");
     const uploadResult: any = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
@@ -360,7 +349,6 @@ export const uploadProfilePicture = async (employeeId: string, file: File) => {
       throw new Error("Cloudinary did not return a valid URL");
     }
 
-    // Save URL to employee record
     console.log("14. Updating employee record...");
     const updateResult = await collection.updateOne(
       { _id: new ObjectId(id) },
@@ -406,19 +394,17 @@ export const getEmployeeByUserId = async (userId: string) => {
 
     const collection = await database?.collection("employees");
 
-    // Search for employee with the given user_id
     const employee = await collection.findOne({
       user_id: userId,
-      isActive: { $ne: false }, // Exclude soft-deleted employees
+      isActive: { $ne: false },
     });
 
     console.log("getEmployeeByUserId - Employee found:", !!employee);
 
     if (!employee) {
-      return null; // No employee found for this user
+      return null;
     }
 
-    // Convert MongoDB ObjectId to string and return the employee
     return {
       ...employee,
       _id: employee._id.toString(),
@@ -429,7 +415,6 @@ export const getEmployeeByUserId = async (userId: string) => {
   }
 };
 
-// Alternative version if you want to search by different user ID fields
 export const getEmployeeByUserIdV2 = async (userId: string) => {
   if (!dbConnection) await init();
   try {
@@ -441,12 +426,11 @@ export const getEmployeeByUserIdV2 = async (userId: string) => {
 
     const collection = await database?.collection("employees");
 
-    // Search using multiple possible user ID fields
     const employee = await collection.findOne({
       $or: [
         { user_id: userId },
-        { userId: userId }, // if you use "userId" field instead of "user_id"
-        { "user.id": userId }, // if user data is nested
+        { userId: userId },
+        { "user.id": userId },
       ],
       isActive: { $ne: false },
     });
@@ -467,7 +451,6 @@ export const getEmployeeByUserIdV2 = async (userId: string) => {
   }
 };
 
-// Get employee details by user ID (returns only employee_details section)
 export const getEmployeeDetailsByUserId = async (userId: string) => {
   if (!dbConnection) await init();
   try {
@@ -481,7 +464,7 @@ export const getEmployeeDetailsByUserId = async (userId: string) => {
         user_id: userId,
         isActive: { $ne: false },
       },
-      { projection: { employee_details: 1, _id: 1 } } // Only return details and ID
+      { projection: { employee_details: 1, _id: 1 } }
     );
 
     if (!employee) {
