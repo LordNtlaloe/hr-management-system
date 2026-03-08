@@ -70,26 +70,25 @@ const normalizeObjectId = (id: string | ObjectId): ObjectId => {
 };
 
 // 🔹 Calculate total days between two dates (inclusive)
+// ✅ FIX: Made synchronous — there is no async work here.
+//    The original async version meant callers got a Promise<number> instead of
+//    a number whenever they forgot to await, causing MongoDB to receive
+//    { used: {} } and throw "Cannot increment with non-numeric argument".
 export const calculateTotalDays = async (startDate: Date, endDate: Date): Promise<number> => {
-  // Make copies to avoid mutating original dates
   const start = new Date(startDate);
   const end = new Date(endDate);
 
-  // Reset time portions to compare only dates
   start.setHours(0, 0, 0, 0);
   end.setHours(0, 0, 0, 0);
 
-  // Calculate difference in milliseconds
   const diffTime = Math.abs(end.getTime() - start.getTime());
-
-  // Convert to days and add 1 to include both start and end dates
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
   console.log("📅 Day calculation:", {
     start: start.toISOString(),
     end: end.toISOString(),
     diffTime,
-    diffDays
+    diffDays,
   });
 
   return diffDays;
@@ -108,12 +107,10 @@ export const getEmployeeLeaveRequests = async (
     console.log("🔍 Fetching leave requests for employeeId:", employeeId);
     console.log("📊 Status filter:", status || "all");
 
-    // Build filter condition
     const filter: any = {};
 
     try {
       filter.employeeId = normalizeObjectId(employeeId);
-      console.log("✅ Using normalized ObjectId for employeeId");
     } catch (error) {
       console.log("❌ Could not normalize as ObjectId, using string employeeId");
       filter.employeeId = employeeId;
@@ -122,8 +119,6 @@ export const getEmployeeLeaveRequests = async (
     if (status && status !== "all") {
       filter.status = status;
     }
-
-    console.log("🔎 Final filter:", JSON.stringify(filter, null, 2));
 
     const leaves = await collection
       .aggregate([
@@ -137,8 +132,8 @@ export const getEmployeeLeaveRequests = async (
                   $cond: {
                     if: { $eq: [{ $strLenCP: "$employeeId" }, 24] },
                     then: { $toObjectId: "$employeeId" },
-                    else: null
-                  }
+                    else: null,
+                  },
                 },
                 else: "$employeeId",
               },
@@ -159,8 +154,8 @@ export const getEmployeeLeaveRequests = async (
               $cond: {
                 if: { $gt: [{ $size: "$employeeData" }, 0] },
                 then: { $arrayElemAt: ["$employeeData", 0] },
-                else: "$employeeId"
-              }
+                else: "$employeeId",
+              },
             },
           },
         },
@@ -176,24 +171,9 @@ export const getEmployeeLeaveRequests = async (
 
     console.log(`✅ Found ${leaves.length} leave requests for employee ${employeeId}`);
 
-    const serializedLeaves = serializeDocument(leaves);
-
-    if (serializedLeaves.length > 0) {
-      console.log("📄 Sample leave request:", {
-        id: serializedLeaves[0]._id,
-        employeeId: serializedLeaves[0].employeeId,
-        status: serializedLeaves[0].status,
-        leaveType: serializedLeaves[0].leaveType,
-        startDate: serializedLeaves[0].startDate,
-        endDate: serializedLeaves[0].endDate,
-        days: serializedLeaves[0].days,
-      });
-    }
-
-    return serializedLeaves;
+    return serializeDocument(leaves);
   } catch (error: any) {
     console.error("❌ Error fetching employee leave requests:", error.message);
-    console.error("Stack trace:", error.stack);
     return [];
   }
 };
@@ -215,43 +195,37 @@ export const createLeaveRequest = async (
 
     const employeeIdObj = normalizeObjectId(leaveData.employeeId);
 
-    // Validate Part A data if provided
     if (partAData) {
       PartASchema.parse(partAData);
     }
 
-    // Calculate days properly
     const startDate = new Date(leaveData.startDate);
     const endDate = new Date(leaveData.endDate);
-    const days = calculateTotalDays(startDate, endDate);
+    const days = await calculateTotalDays(startDate, endDate);
 
     console.log("📊 Leave request calculation:", {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
-      calculatedDays: days
+      calculatedDays: days,
     });
 
-    // Check if it's annual leave (needs balance check)
     if (leaveData.leaveType === "Annual" || leaveData.leaveType === "annual") {
-      // Get current year
       const currentYear = new Date().getFullYear();
 
-      // Get employee's leave balance
       const balance = await balanceCollection.findOne({
         employeeId: employeeIdObj,
         leaveType: "Annual",
-        year: currentYear
+        year: currentYear,
       });
 
       console.log("📊 Checking leave balance:", {
         employeeId: employeeIdObj.toString(),
         requestedDays: days,
-        currentBalance: balance ? (balance.allocated - balance.used) : 0,
+        currentBalance: balance ? balance.allocated - balance.used : 0,
         allocated: balance?.allocated || 0,
-        used: balance?.used || 0
+        used: balance?.used || 0,
       });
 
-      // If no balance record exists, create one
       if (!balance) {
         console.log("⚠️ No balance record found, creating default...");
         await balanceCollection.insertOne({
@@ -261,13 +235,15 @@ export const createLeaveRequest = async (
           used: 0,
           year: currentYear,
           createdAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         });
       } else {
-        // Check if employee has enough leave days
         const availableDays = balance.allocated - balance.used;
-        if (availableDays < await days) {
-          throw new Error(`Insufficient leave balance. Available: ${availableDays} days, Requested: ${days} days`);
+        // ✅ FIX: days is now a plain number, no await required
+        if (availableDays < days) {
+          throw new Error(
+            `Insufficient leave balance. Available: ${availableDays} days, Requested: ${days} days`
+          );
         }
       }
     }
@@ -275,7 +251,7 @@ export const createLeaveRequest = async (
     const leave = {
       ...leaveData,
       employeeId: employeeIdObj,
-      days: days, // Use calculated days
+      days,
       partAData: partAData || null,
       status: "pending",
       appliedDate: new Date(),
@@ -289,9 +265,9 @@ export const createLeaveRequest = async (
       insertedId: result.insertedId.toString(),
       employeeId: employeeIdObj.toString(),
       leaveType: leaveData.leaveType,
-      days: days,
+      days,
       startDate: leaveData.startDate,
-      endDate: leaveData.endDate
+      endDate: leaveData.endDate,
     });
 
     return { insertedId: result.insertedId.toString(), success: true };
@@ -308,7 +284,6 @@ export const updateLeaveRequestWithPartB = async (
 ) => {
   if (!dbConnection) await init();
   try {
-    // Validate Part B data
     PartBSchema.parse(partBData);
 
     const collection = await database?.collection("leave_requests");
@@ -316,7 +291,7 @@ export const updateLeaveRequestWithPartB = async (
       { _id: new ObjectId(id) },
       {
         $set: {
-          partBData: partBData,
+          partBData,
           status: "approved",
           updatedAt: new Date(),
         },
@@ -325,7 +300,7 @@ export const updateLeaveRequestWithPartB = async (
 
     console.log("✅ Leave request updated with Part B:", {
       id,
-      modifiedCount: result.modifiedCount
+      modifiedCount: result.modifiedCount,
     });
 
     return { modifiedCount: result.modifiedCount, success: true };
@@ -420,19 +395,24 @@ export const approveLeaveRequest = async (
     const collection = await database?.collection("leave_requests");
     const balanceCollection = await database?.collection("leave_balances");
 
-    // First, get the leave request
     const leaveRequest = await collection.findOne({ _id: new ObjectId(id) });
 
     if (!leaveRequest) {
       throw new Error("Leave request not found");
     }
 
-    // Calculate days if not already calculated
+    // ✅ FIX: calculateTotalDays is now sync — guaranteed number, never a Promise.
+    //    Previously this was async and the missing await produced a Promise object
+    //    which MongoDB rejected with "Cannot increment with non-numeric argument: {used: {}}"
     const startDate = new Date(leaveRequest.startDate);
     const endDate = new Date(leaveRequest.endDate);
-    const days = leaveRequest.days || calculateTotalDays(startDate, endDate);
+    const days: number =
+      typeof leaveRequest.days === "number" && leaveRequest.days > 0
+        ? leaveRequest.days
+        : await calculateTotalDays(startDate, endDate);
 
-    // Update leave request status
+    console.log("📊 Approving leave:", { id, days, leaveType: leaveRequest.leaveType });
+
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
       {
@@ -442,7 +422,7 @@ export const approveLeaveRequest = async (
           approvedDate: new Date(),
           approverComments: comments || "",
           updatedAt: new Date(),
-          days: days // Ensure days field is set
+          days, // ensure the field is persisted
         },
       }
     );
@@ -450,59 +430,55 @@ export const approveLeaveRequest = async (
     if (result.modifiedCount > 0) {
       const employeeId = normalizeObjectId(leaveRequest.employeeId);
 
-      // Update leave balance for annual leave
-      if (leaveRequest.leaveType === "Annual" || leaveRequest.leaveType === "annual") {
+      if (
+        leaveRequest.leaveType === "Annual" ||
+        leaveRequest.leaveType === "annual"
+      ) {
         const currentYear = new Date().getFullYear();
 
-        // Get current balance
         const currentBalance = await balanceCollection.findOne({
           employeeId,
           leaveType: "Annual",
-          year: currentYear
+          year: currentYear,
         });
 
         if (!currentBalance) {
-          // Create new balance record if none exists
           await balanceCollection.insertOne({
             employeeId,
             leaveType: "Annual",
             allocated: 21,
-            used: days,
+            used: days,         // ✅ plain number
             year: currentYear,
             createdAt: new Date(),
-            updatedAt: new Date()
+            updatedAt: new Date(),
           });
         } else {
-          // Update existing balance
           await balanceCollection.updateOne(
+            { employeeId, leaveType: "Annual", year: currentYear },
             {
-              employeeId,
-              leaveType: "Annual",
-              year: currentYear
-            },
-            {
-              $inc: { used: days },
+              $inc: { used: days },   // ✅ plain number — MongoDB $inc now works correctly
               $set: { updatedAt: new Date() },
             }
           );
         }
 
-        // Verify the balance update
         const updatedBalance = await balanceCollection.findOne({
           employeeId,
           leaveType: "Annual",
-          year: currentYear
+          year: currentYear,
         });
 
         console.log("✅ Leave approved and balance updated:", {
           leaveId: id,
           employeeId: employeeId.toString(),
           daysDeducted: days,
-          newBalance: updatedBalance ? {
-            allocated: updatedBalance.allocated,
-            used: updatedBalance.used,
-            remaining: updatedBalance.allocated - updatedBalance.used
-          } : "No balance record"
+          newBalance: updatedBalance
+            ? {
+                allocated: updatedBalance.allocated,
+                used: updatedBalance.used,
+                remaining: updatedBalance.allocated - updatedBalance.used,
+              }
+            : "No balance record",
         });
       }
     }
@@ -689,7 +665,6 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
 
     const balances = await collection.find(query).toArray();
 
-    // If no balance exists for current year, create default
     const currentYear = new Date().getFullYear();
     const currentYearBalance = balances.find((b: any) => b.year === currentYear);
 
@@ -702,7 +677,7 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
         used: 0,
         year: currentYear,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       };
 
       await collection.insertOne(defaultBalance);
@@ -717,8 +692,8 @@ export const getEmployeeLeaveBalance = async (employeeId: string) => {
         allocated: b.allocated,
         used: b.used,
         remaining: b.allocated - b.used,
-        year: b.year
-      }))
+        year: b.year,
+      })),
     });
 
     return serializeDocument(balances);
@@ -738,11 +713,7 @@ const updateLeaveBalance = async (
     const currentYear = new Date().getFullYear();
 
     const result = await collection.updateOne(
-      {
-        employeeId,
-        leaveType,
-        year: currentYear
-      },
+      { employeeId, leaveType, year: currentYear },
       {
         $inc: { used: daysUsed },
         $set: { updatedAt: new Date() },
@@ -755,7 +726,7 @@ const updateLeaveBalance = async (
       leaveType,
       daysUsed,
       modifiedCount: result.modifiedCount,
-      upsertedId: result.upsertedId
+      upsertedId: result.upsertedId,
     });
 
     return { success: true };
@@ -771,12 +742,7 @@ export const resetLeaveBalances = async (year: number) => {
     const collection = await database?.collection("leave_balances");
     const result = await collection.updateMany(
       { year },
-      {
-        $set: {
-          used: 0,
-          updatedAt: new Date(),
-        },
-      }
+      { $set: { used: 0, updatedAt: new Date() } }
     );
     return { modifiedCount: result.modifiedCount, success: true };
   } catch (error: any) {
@@ -791,8 +757,8 @@ export const getRemainingLeaveDays = async (employeeId: string): Promise<number>
     const balances = await getEmployeeLeaveBalance(employeeId);
     const currentYear = new Date().getFullYear();
 
-    const annualBalance = balances.find((b: any) =>
-      b.leaveType === "Annual" && b.year === currentYear
+    const annualBalance = balances.find(
+      (b: any) => b.leaveType === "Annual" && b.year === currentYear
     );
 
     if (annualBalance) {
@@ -801,30 +767,33 @@ export const getRemainingLeaveDays = async (employeeId: string): Promise<number>
         employeeId,
         allocated: annualBalance.allocated,
         used: annualBalance.used,
-        remaining
+        remaining,
       });
       return remaining;
     }
 
-    // Return default if no balance found
     console.log("📊 No balance found, returning default 21 days");
     return 21;
   } catch (error) {
     console.error("❌ Error getting remaining leave days:", error);
-    return 21; // Default fallback
+    return 21;
   }
 };
 
-// 🔹 Check if employee has enough leave days
 // 🔹 Check if employee has enough leave days
 export const validateLeaveRequest = async (
   employeeId: string,
   startDate: Date,
   endDate: Date,
   leaveType: string
-): Promise<{ valid: boolean; availableDays: number; requestedDays: number; message?: string }> => {
+): Promise<{
+  valid: boolean;
+  availableDays: number;
+  requestedDays: number;
+  message?: string;
+}> => {
   try {
-    // 🔹 FIX: Add 'await' here
+    // ✅ await here — async is required by Next.js "use server", but the value is a plain number
     const requestedDays = await calculateTotalDays(startDate, endDate);
 
     console.log("🔍 Validating leave request:", {
@@ -832,7 +801,7 @@ export const validateLeaveRequest = async (
       startDate,
       endDate,
       leaveType,
-      requestedDays
+      requestedDays,
     });
 
     if (leaveType === "Annual" || leaveType === "annual") {
@@ -841,23 +810,26 @@ export const validateLeaveRequest = async (
       console.log("📊 Validation result:", {
         remainingDays,
         requestedDays,
-        hasEnough: remainingDays >= requestedDays  // 🔹 FIX: removed await here
+        hasEnough: remainingDays >= requestedDays,
       });
 
-      if (remainingDays < requestedDays) {  // 🔹 FIX: removed await here
+      if (remainingDays < requestedDays) {
         return {
           valid: false,
           availableDays: remainingDays,
-          requestedDays: requestedDays,  // 🔹 FIX: not awaiting here
-          message: `Insufficient leave balance. Available: ${remainingDays} days, Requested: ${requestedDays} days`
+          requestedDays,
+          message: `Insufficient leave balance. Available: ${remainingDays} days, Requested: ${requestedDays} days`,
         };
       }
     }
 
     return {
       valid: true,
-      availableDays: leaveType === "Annual" ? await getRemainingLeaveDays(employeeId) : -1,
-      requestedDays: requestedDays  // 🔹 FIX: not awaiting here
+      availableDays:
+        leaveType === "Annual"
+          ? await getRemainingLeaveDays(employeeId)
+          : -1,
+      requestedDays,
     };
   } catch (error: any) {
     console.error("❌ Error validating leave request:", error);
@@ -865,13 +837,13 @@ export const validateLeaveRequest = async (
       valid: false,
       availableDays: 0,
       requestedDays: 0,
-      message: error.message
+      message: error.message,
     };
   }
 };
+
 // ===================== REPORTS =====================
 
-// 🔹 Leave Report
 export const getLeaveReport = async (
   startDate: Date,
   endDate: Date,
@@ -919,10 +891,7 @@ export const getLeaveReport = async (
 
     pipeline.push({
       $group: {
-        _id: {
-          employeeId: "$employeeObjectId",
-          leaveType: "$leaveType",
-        },
+        _id: { employeeId: "$employeeObjectId", leaveType: "$leaveType" },
         employee: { $first: "$employee" },
         totalDays: { $sum: "$days" },
         requestCount: { $sum: 1 },
@@ -936,13 +905,11 @@ export const getLeaveReport = async (
   }
 };
 
-// 🔹 Employee Status Counts
 export const getEmployeeStatusCounts = async () => {
   if (!dbConnection) await init();
   try {
     const employeesCollection = await database?.collection("employees");
-    const leaveRequestsCollection =
-      await database?.collection("leave_requests");
+    const leaveRequestsCollection = await database?.collection("leave_requests");
 
     const employees = await employeesCollection.find({}).toArray();
     const activeLeaves = await leaveRequestsCollection
@@ -972,7 +939,6 @@ export const getEmployeeStatusCounts = async () => {
   }
 };
 
-// 🔹 Monthly Leave Requests
 export const getMonthlyLeaveRequests = async (year: number) => {
   if (!dbConnection) await init();
   try {
@@ -987,25 +953,13 @@ export const getMonthlyLeaveRequests = async (year: number) => {
           },
         },
       },
-      {
-        $group: {
-          _id: { $month: "$appliedDate" },
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $project: {
-          month: "$_id",
-          count: 1,
-          _id: 0,
-        },
-      },
+      { $group: { _id: { $month: "$appliedDate" }, count: { $sum: 1 } } },
+      { $project: { month: "$_id", count: 1, _id: 0 } },
       { $sort: { month: 1 } },
     ];
 
     const result = await collection.aggregate(pipeline).toArray();
     const monthlyData = Array(12).fill(0);
-
     result.forEach((item: { month: number; count: number }) => {
       monthlyData[item.month - 1] = item.count;
     });
@@ -1017,7 +971,6 @@ export const getMonthlyLeaveRequests = async (year: number) => {
   }
 };
 
-// 🔹 Employee Leave Utilization
 export const getEmployeeLeaveUtilization = async (
   employeeId: string,
   year?: number
@@ -1066,11 +1019,7 @@ export const getEmployeeLeaveUtilization = async (
       {
         $lookup: {
           from: "leave_balances",
-          let: {
-            empId: queryEmployeeId,
-            lType: "$leaveType",
-            year: currentYear,
-          },
+          let: { empId: queryEmployeeId, lType: "$leaveType", year: currentYear },
           pipeline: [
             {
               $match: {
@@ -1089,9 +1038,7 @@ export const getEmployeeLeaveUtilization = async (
       },
       {
         $addFields: {
-          allocated: {
-            $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 0],
-          },
+          allocated: { $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 0] },
           used: { $ifNull: [{ $arrayElemAt: ["$balanceInfo.used", 0] }, 0] },
           remaining: {
             $subtract: [
@@ -1101,33 +1048,13 @@ export const getEmployeeLeaveUtilization = async (
           },
           utilizationRate: {
             $cond: {
-              if: {
-                $gt: [
-                  {
-                    $ifNull: [
-                      { $arrayElemAt: ["$balanceInfo.allocated", 0] },
-                      1,
-                    ],
-                  },
-                  0,
-                ],
-              },
+              if: { $gt: [{ $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 1] }, 0] },
               then: {
                 $multiply: [
                   {
                     $divide: [
-                      {
-                        $ifNull: [
-                          { $arrayElemAt: ["$balanceInfo.used", 0] },
-                          0,
-                        ],
-                      },
-                      {
-                        $ifNull: [
-                          { $arrayElemAt: ["$balanceInfo.allocated", 0] },
-                          1,
-                        ],
-                      },
+                      { $ifNull: [{ $arrayElemAt: ["$balanceInfo.used", 0] }, 0] },
+                      { $ifNull: [{ $arrayElemAt: ["$balanceInfo.allocated", 0] }, 1] },
                     ],
                   },
                   100,
@@ -1156,7 +1083,6 @@ export const getEmployeeLeaveUtilization = async (
 
     const utilization = await collection.aggregate(pipeline).toArray();
 
-    // Get overall summary
     const summaryPipeline = [
       {
         $match: {
@@ -1181,7 +1107,7 @@ export const getEmployeeLeaveUtilization = async (
     const summary = summaryResult[0] || { totalDaysUsed: 0, totalRequests: 0 };
 
     return serializeDocument({
-      employeeId: employeeId,
+      employeeId,
       year: currentYear,
       utilizationByType: utilization,
       summary: {
@@ -1189,9 +1115,7 @@ export const getEmployeeLeaveUtilization = async (
         totalRequests: summary.totalRequests,
         averageDaysPerRequest:
           summary.totalRequests > 0
-            ? parseFloat(
-              (summary.totalDaysUsed / summary.totalRequests).toFixed(2)
-            )
+            ? parseFloat((summary.totalDaysUsed / summary.totalRequests).toFixed(2))
             : 0,
       },
     });
@@ -1201,7 +1125,6 @@ export const getEmployeeLeaveUtilization = async (
   }
 };
 
-// 🔹 Get Employee Activities (Leave Requests as Timeline)
 export const getEmployeeActivities = async (employeeId: string) => {
   if (!dbConnection) await init();
 
@@ -1210,26 +1133,20 @@ export const getEmployeeActivities = async (employeeId: string) => {
 
     console.log("🔍 Fetching activities for employeeId:", employeeId);
 
-    // Build filter for this specific employee
     const filter: any = {};
-
     try {
       filter.employeeId = normalizeObjectId(employeeId);
-      console.log("✅ Using normalized ObjectId for employeeId");
     } catch (error) {
-      console.log("❌ Could not normalize as ObjectId, using string employeeId");
       filter.employeeId = employeeId;
     }
 
-    // Fetch all leave requests for this employee
     const leaves = await collection
       .find(filter)
-      .sort({ appliedDate: -1 }) // Most recent first
+      .sort({ appliedDate: -1 })
       .toArray();
 
     console.log(`✅ Found ${leaves.length} leave activities for employee ${employeeId}`);
 
-    // Transform leave requests into activity format
     const activities = leaves.map((leave: LeaveRequest) => ({
       _id: leave._id,
       type: "leave",
@@ -1237,7 +1154,6 @@ export const getEmployeeActivities = async (employeeId: string) => {
       date: leave.appliedDate || leave.createdAt,
       status: leave.status,
       partBData: leave.partBData || null,
-      // Include additional leave details
       leaveDetails: {
         leaveType: leave.leaveType,
         startDate: leave.startDate,
@@ -1249,13 +1165,12 @@ export const getEmployeeActivities = async (employeeId: string) => {
         rejectedDate: leave.rejectedDate,
         approverComments: leave.approverComments,
         rejectionReason: leave.rejectionReason,
-      }
+      },
     }));
 
     return serializeDocument(activities);
   } catch (error: any) {
     console.error("❌ Error fetching employee activities:", error.message);
-    console.error("Stack trace:", error.stack);
     return [];
   }
 };
