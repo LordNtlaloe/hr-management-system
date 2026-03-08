@@ -9,7 +9,6 @@ interface LeaveListProps {
   onApprove: (leaveId: string) => void;
   onReject: (leaveId: string) => void;
   onMultiSectionApprove?: (leave: LeaveWithEmployee, section?: "partB" | "partC" | "partD") => void;
-
 }
 
 const LeaveList: React.FC<LeaveListProps> = ({
@@ -18,6 +17,7 @@ const LeaveList: React.FC<LeaveListProps> = ({
   processing,
   onApprove,
   onReject,
+  onMultiSectionApprove, // ✅ was received but never forwarded before
 }) => {
   return (
     <div className="space-y-4">
@@ -29,6 +29,7 @@ const LeaveList: React.FC<LeaveListProps> = ({
           processing={processing}
           onApprove={onApprove}
           onReject={onReject}
+          onMultiSectionApprove={onMultiSectionApprove} // ✅ now forwarded
         />
       ))}
     </div>

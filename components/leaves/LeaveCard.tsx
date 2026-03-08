@@ -12,6 +12,7 @@ interface LeaveCardProps {
   processing: string | null;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onMultiSectionApprove?: (leave: LeaveWithEmployee, section?: "partB" | "partC" | "partD") => void;
 }
 
 const LeaveCard: React.FC<LeaveCardProps> = ({
@@ -20,51 +21,56 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
   processing,
   onApprove,
   onReject,
+  onMultiSectionApprove,
 }) => {
-  // Access the employee data from employeeId (which is the populated Employee object)
-  const employeeDetails = leave.employeeId;
+  // ✅ Safe extraction: employeeId may be a populated object OR a raw string ID
+  const employeeDetails =
+    leave.employeeId && typeof leave.employeeId === "object"
+      ? leave.employeeId
+      : null;
+
+  const firstName = employeeDetails?.first_name ?? "";
+  const lastName = employeeDetails?.last_name ?? "";
+  const fullName = `${firstName} ${lastName}`.trim() || "Unknown Employee";
 
   const handleApprove = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log("Approve clicked for leave:", leave._id);
     onApprove(leave._id);
   };
 
   const handleReject = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log("Reject clicked for leave:", leave._id);
     onReject(leave._id);
+  };
+
+  const handleDetailedApproval = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onMultiSectionApprove?.(leave, "partB");
   };
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
-      case "approved":
-        return "default";
-      case "rejected":
-        return "destructive";
-      case "pending":
-        return "secondary";
-      default:
-        return "outline";
+      case "approved": return "default";
+      case "rejected": return "destructive";
+      case "pending": return "secondary";
+      default: return "outline";
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "approved":
-        return "text-green-600 bg-green-50";
-      case "rejected":
-        return "text-red-600 bg-red-50";
-      case "pending":
-        return "text-yellow-600 bg-yellow-50";
-      default:
-        return "text-gray-600 bg-gray-50";
+      case "approved": return "text-green-600 bg-green-50";
+      case "rejected": return "text-red-600 bg-red-50";
+      case "pending": return "text-yellow-600 bg-yellow-50";
+      default: return "text-gray-600 bg-gray-50";
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "—";
     return new Date(dateString).toLocaleDateString("en-US", {
       weekday: "short",
       year: "numeric",
@@ -73,8 +79,8 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
     });
   };
 
-  const getInitials = (name?: string) => {
-    if (!name) return "??";
+  const getInitials = (name: string) => {
+    if (!name || name === "Unknown Employee") return "??";
     return name
       .split(" ")
       .map((part) => part.charAt(0))
@@ -91,30 +97,29 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
       <CardContent className="p-6">
         <div className="flex flex-col space-y-4 lg:flex-row lg:items-start lg:justify-between lg:space-y-0">
           <div className="flex-1 space-y-4">
+
             {/* Employee Info Header */}
             <div className="flex items-start space-x-4">
               <Avatar className="w-12 h-12">
-                {employeeDetails.image ? (
+                {employeeDetails?.image ? (
                   <AvatarImage
                     src={employeeDetails.image}
-                    alt={employeeDetails.first_name || "Employee"}
+                    alt={fullName}
                   />
                 ) : (
                   <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                    {getInitials(
-                      `${employeeDetails.first_name || ""} ${employeeDetails.last_name || ""}`.trim() ||
-                      "Unknown"
-                    )}
+                    {getInitials(fullName)}
                   </AvatarFallback>
                 )}
               </Avatar>
 
               <div className="flex-1 min-w-0">
+                {/* ✅ Using safe string variables, never rendering raw objects */}
                 <h3 className="font-semibold text-lg text-gray-900 truncate">
-                  {employeeDetails.first_name} {employeeDetails.last_name}
+                  {fullName}
                 </h3>
 
-                {employeeDetails.email && (
+                {employeeDetails?.email && (
                   <div className="flex items-center space-x-2 text-sm text-gray-500 mt-1">
                     <Mail className="w-4 h-4 flex-shrink-0" />
                     <span className="truncate">{employeeDetails.email}</span>
@@ -122,12 +127,12 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                 )}
 
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {employeeDetails.employment_number && (
+                  {employeeDetails?.employment_number && (
                     <Badge variant="outline" className="text-xs">
                       #{employeeDetails.employment_number}
                     </Badge>
                   )}
-                  {employeeDetails.phone && (
+                  {employeeDetails?.phone && (
                     <span className="text-xs text-gray-500 flex items-center gap-1">
                       <User className="w-3 h-3" />
                       {employeeDetails.phone}
@@ -136,7 +141,6 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                 </div>
               </div>
 
-              {/* Status Badge */}
               <Badge
                 variant={getStatusBadgeVariant(leave.status)}
                 className={`${getStatusColor(leave.status)} capitalize font-medium`}
@@ -165,13 +169,11 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                 </Badge>
               </div>
 
-              {/* Applied Date */}
               <div className="flex items-center space-x-2 text-sm text-gray-500">
                 <Clock className="w-4 h-4" />
                 <span>Applied on {formatDate(leave.appliedDate)}</span>
               </div>
 
-              {/* Reason */}
               {leave.reason && leave.reason.trim() && (
                 <div className="p-3 bg-gray-50 rounded-md">
                   <p className="text-sm text-gray-700">
@@ -180,7 +182,6 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
                 </div>
               )}
 
-              {/* Approval/Rejection Details */}
               {(leave.status === "approved" || leave.status === "rejected") && (
                 <div className="p-3 bg-gray-50 rounded-md text-sm">
                   {leave.status === "approved" && leave.approvedDate && (
@@ -233,6 +234,18 @@ const LeaveCard: React.FC<LeaveCardProps> = ({
               >
                 {isRejecting ? "Rejecting..." : "Reject"}
               </Button>
+              {onMultiSectionApprove && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDetailedApproval}
+                  disabled={isApproving || isRejecting}
+                  className="w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+                >
+                  Detailed Approval
+                </Button>
+              )}
             </div>
           )}
         </div>

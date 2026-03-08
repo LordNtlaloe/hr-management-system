@@ -21,7 +21,12 @@ export default function NotificationDropdown() {
   return (
     <DropdownMenu onOpenChange={handleOpen}>
       <DropdownMenuTrigger asChild>
-        <button className="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white">
+        {/* suppressHydrationWarning prevents the Radix-generated ID mismatch error
+            between server and client renders */}
+        <button
+          suppressHydrationWarning
+          className="relative flex items-center justify-center text-gray-500 transition-colors bg-white border border-gray-200 rounded-full hover:text-gray-700 h-11 w-11 hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+        >
           {notifying && (
             <span className="absolute right-0 top-0.5 z-10 h-2 w-2 rounded-full bg-orange-400">
               <span className="absolute inline-flex w-full h-full bg-orange-400 rounded-full opacity-75 animate-ping"></span>
@@ -39,7 +44,6 @@ export default function NotificationDropdown() {
           <span className="font-semibold">Notifications</span>
         </DropdownMenuLabel>
 
-        {/* Example notifications */}
         <DropdownMenuItem className="flex gap-3 items-start p-3 hover:bg-muted rounded-lg cursor-pointer">
           <Image
             src="/images/user/user-02.jpg"
@@ -51,7 +55,8 @@ export default function NotificationDropdown() {
           <div className="flex flex-col text-sm">
             <span>
               <span className="font-medium">Terry Franci</span> requests
-              permission to change <span className="font-medium">Project - Nganter App</span>
+              permission to change{" "}
+              <span className="font-medium">Project - Nganter App</span>
             </span>
             <span className="text-xs text-gray-500">5 min ago</span>
           </div>
@@ -68,7 +73,8 @@ export default function NotificationDropdown() {
           <div className="flex flex-col text-sm">
             <span>
               <span className="font-medium">Alena Franci</span> requests
-              permission to change <span className="font-medium">Project - Nganter App</span>
+              permission to change{" "}
+              <span className="font-medium">Project - Nganter App</span>
             </span>
             <span className="text-xs text-gray-500">8 min ago</span>
           </div>

@@ -4,26 +4,22 @@ import React, { useEffect, useState } from "react";
 import { useCurrentRole } from "@/hooks/use-current-role";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CalendarDays, ClipboardList, Users, BarChart3, FileCheck } from "lucide-react";
+import { CalendarDays, ClipboardList, Users, FileCheck } from "lucide-react";
 import LeaveList from "@/components/leaves/LeavesList";
 import Calendar from "@/components/calendar/Calendar";
 import MyRequests from "@/components/leaves/MyRequests";
-import { LeaveRequest, LeaveWithEmployee, Employee } from "@/types";
+import { LeaveWithEmployee } from "@/types";
 import {
   getAllLeaveRequests,
   approveLeaveRequest,
   rejectLeaveRequest,
   updateLeaveRequest,
 } from "@/actions/leaves.actions";
-import {
-  getEmployeeById,
-  getEmployeeByUserId,
-} from "@/actions/employee.actions";
+import { getEmployeeByUserId } from "@/actions/employee.actions";
 import { toast } from "sonner";
 import { Modal } from "@/components/ui/modal";
 import { useModal } from "@/hooks/use-modal";
 
-// Types for the multi-section form
 interface PartBData {
   annualLeaveDays: number;
   deductedDays: number;
@@ -56,7 +52,6 @@ const LeavesPage: React.FC = () => {
   const [processing, setProcessing] = useState<string | null>(null);
   const [employeeId, setEmployeeId] = useState<string | undefined>(undefined);
 
-  // Multi-section approval state
   const [selectedLeave, setSelectedLeave] = useState<LeaveWithEmployee | null>(null);
   const [activeSection, setActiveSection] = useState<"partB" | "partC" | "partD">("partB");
   const [partB, setPartB] = useState<PartBData>({
@@ -67,18 +62,17 @@ const LeavesPage: React.FC = () => {
   const [partC, setPartC] = useState<PartCData>({});
   const [partD, setPartD] = useState<PartDData>({});
 
-  // 🔹 Fetch employeeId for current user (Employee view)
+  // ─── Fetch current employee ID ───────────────────────────────────────────────
   useEffect(() => {
     const fetchEmployee = async () => {
       if (!user?.id || role !== "Employee") {
         setLoading(false);
         return;
       }
-
       try {
         const employee = await getEmployeeByUserId(user.id);
         if (employee?._id) {
-          setEmployeeId(employee._id);
+          setEmployeeId(String(employee._id));
         } else {
           toast.error("Employee profile not found");
         }
@@ -92,54 +86,70 @@ const LeavesPage: React.FC = () => {
     fetchEmployee();
   }, [user, role]);
 
-  // 🔹 Fetch all leave requests (Admin/Manager) or Employee's own
+  // ─── Fetch leaves ─────────────────────────────────────────────────────────────
+  // KEY FIX: getAllLeaveRequests uses a MongoDB $lookup that sets employeeId to the
+  // full populated employee document. We must NEVER spread that raw object into
+  // React state. Instead we extract every field explicitly as a primitive string.
   const fetchLeaves = async (targetEmployeeId?: string) => {
     setLoading(true);
     try {
-      const allLeavesData: LeaveRequest[] = await getAllLeaveRequests();
+      const allLeavesData = await getAllLeaveRequests();
 
-      const leavesWithEmployees: LeaveWithEmployee[] = await Promise.all(
-        allLeavesData.map(async (leave: any) => {
-          let employeeData: Employee | null = null;
-          let empId = "";
+      const leavesWithEmployees: LeaveWithEmployee[] = allLeavesData.map(
+        (leave: any) => {
+          // The aggregate pipeline sets leave.employeeId = populated employee doc
+          const empDoc =
+            leave.employeeId && typeof leave.employeeId === "object"
+              ? leave.employeeId
+              : null;
 
-          if (
-            leave.employeeId &&
-            typeof leave.employeeId === "object" &&
-            leave.employeeId._id
-          ) {
-            employeeData = leave.employeeId as Employee;
-            empId = employeeData._id;
-          } else if (leave.employeeId) {
-            empId =
-              typeof leave.employeeId === "string"
-                ? leave.employeeId
-                : leave.employeeId.toString();
-            try {
-              employeeData = await getEmployeeById(empId);
-            } catch (err) {
-              console.warn(
-                `Failed to fetch employee data for ID: ${empId}`,
-                err
-              );
-            }
-          }
+          // Resolve the employee's string ID
+          const empId: string = empDoc?._id
+            ? String(empDoc._id)
+            : typeof leave.employeeId === "string"
+            ? leave.employeeId
+            : "";
 
+          // Build a flat, fully-serialisable employeeDetails object.
+          // Every value is coerced to a primitive — no objects, no undefined.
           const employeeDetails = {
-            name: `${employeeData?.first_name} ${employeeData?.last_name}`.trim,
-            email: employeeData?.email,
-            avatar: employeeData?.image,
-            employment_number: employeeData?.employment_number,
-            phone: employeeData?.phone,
+            first_name: String(empDoc?.first_name ?? ""),
+            last_name: String(empDoc?.last_name ?? ""),
+            name:
+              `${empDoc?.first_name ?? ""} ${empDoc?.last_name ?? ""}`.trim() ||
+              "Unknown Employee",
+            email: String(empDoc?.email ?? ""),
+            avatar: String(empDoc?.image ?? ""),
+            employment_number: String(empDoc?.employment_number ?? ""),
+            phone: String(empDoc?.phone ?? ""),
           };
 
+          // Build a NEW object with ONLY primitive/serialisable fields.
+          // We intentionally do NOT spread `...leave` because leave.employeeId
+          // is still a Mongo document at this point and would cause the
+          // "Objects are not valid as a React child" error.
           return {
-            ...leave,
-            employeeDetails,
-            // Include form data if it exists
-            formData: leave.formData || undefined
-          };
-        })
+            _id: String(leave._id),
+            employeeId: empId, // ✅ always a plain string
+            employeeDetails, // ✅ flat, all-primitive object
+            leaveType: String(leave.leaveType ?? ""),
+            status: String(leave.status ?? "pending"),
+            startDate: String(leave.startDate ?? ""),
+            endDate: String(leave.endDate ?? ""),
+            days: Number(leave.days ?? 0),
+            reason: String(leave.reason ?? ""),
+            appliedDate: String(leave.appliedDate ?? ""),
+            approvedDate: leave.approvedDate ? String(leave.approvedDate) : undefined,
+            rejectedDate: leave.rejectedDate ? String(leave.rejectedDate) : undefined,
+            approverComments: leave.approverComments
+              ? String(leave.approverComments)
+              : undefined,
+            rejectionReason: leave.rejectionReason
+              ? String(leave.rejectionReason)
+              : undefined,
+            formData: leave.formData ?? undefined,
+          } as unknown as LeaveWithEmployee;
+        }
       );
 
       leavesWithEmployees.sort(
@@ -147,15 +157,12 @@ const LeavesPage: React.FC = () => {
           new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime()
       );
 
-      // Filter for Employee view
+      // employeeId is typed as Employee in LeaveWithEmployee but we store a plain
+      // string at runtime — cast to unknown first to satisfy TypeScript.
       const filteredLeaves = targetEmployeeId
         ? leavesWithEmployees.filter(
-          (l) =>
-            (typeof l.employeeId === "string" &&
-              l.employeeId === targetEmployeeId) ||
-            (typeof l.employeeId === "object" &&
-              l.employeeId._id === targetEmployeeId)
-        )
+            (l) => (l.employeeId as unknown as string) === targetEmployeeId
+          )
         : leavesWithEmployees;
 
       setAllLeaves(filteredLeaves);
@@ -168,7 +175,6 @@ const LeavesPage: React.FC = () => {
     }
   };
 
-  // Fetch leaves after employeeId is resolved
   useEffect(() => {
     if (role === "Employee" && employeeId) {
       fetchLeaves(employeeId);
@@ -177,104 +183,81 @@ const LeavesPage: React.FC = () => {
     }
   }, [employeeId, role]);
 
-  // Open multi-section approval modal
-  const handleOpenApproval = (leave: LeaveWithEmployee, section: "partB" | "partC" | "partD" = "partB") => {
+  // ─── Multi-section approval modal ────────────────────────────────────────────
+  const handleOpenApproval = (
+    leave: LeaveWithEmployee,
+    section: "partB" | "partC" | "partD" = "partB"
+  ) => {
     setSelectedLeave(leave);
     setActiveSection(section);
 
-    // Pre-fill existing data if available
     if (leave.formData) {
       if (leave.formData.partB) setPartB(leave.formData.partB);
       if (leave.formData.partC) setPartC(leave.formData.partC);
       if (leave.formData.partD) setPartD(leave.formData.partD);
     } else {
-      // Initialize with default values
-      const deductedDays = leave.days || calculateDaysDifference(new Date(leave.startDate), new Date(leave.endDate));
-      setPartB({
-        annualLeaveDays: 21,
-        deductedDays,
-        remainingLeaveDays: 21 - deductedDays,
-      });
+      const deductedDays =
+        leave.days ||
+        calculateDaysDifference(
+          new Date(leave.startDate),
+          new Date(leave.endDate)
+        );
+      setPartB({ annualLeaveDays: 21, deductedDays, remainingLeaveDays: 21 - deductedDays });
       setPartC({});
       setPartD({});
     }
-
     openModal();
   };
 
-  // Handle Part B changes (HR Section)
   const handlePartBChange = (field: string, value: any) => {
-    const updatedPartB = { ...partB, [field]: value };
-
-    // Auto-calculate remaining days
+    const updated = { ...partB, [field]: value };
     if (field === "annualLeaveDays" || field === "deductedDays") {
-      updatedPartB.remainingLeaveDays = updatedPartB.annualLeaveDays - updatedPartB.deductedDays;
+      updated.remainingLeaveDays = updated.annualLeaveDays - updated.deductedDays;
     }
-
-    // Auto-fill date and signature for HR
-    if (field === "deductedDays" && value > 0 && !updatedPartB.dateOfApproval) {
-      updatedPartB.dateOfApproval = new Date().toISOString().split('T')[0];
+    if (field === "deductedDays" && value > 0 && !updated.dateOfApproval) {
+      updated.dateOfApproval = new Date().toISOString().split("T")[0];
     }
-    if (!updatedPartB.hrSignature && user?.name) {
-      updatedPartB.hrSignature = user.name;
-    }
-
-    setPartB(updatedPartB);
+    if (!updated.hrSignature && user?.name) updated.hrSignature = user.name;
+    setPartB(updated);
   };
 
-  // Handle Part C changes (Supervisor Section)
   const handlePartCChange = (field: string, value: any) => {
-    const updatedPartC = { ...partC, [field]: value };
-
-    // Auto-fill date and signature for Supervisor
-    if ((field === "recommendation" || field === "supervisorComments") && !updatedPartC.dateOfReview) {
-      updatedPartC.dateOfReview = new Date().toISOString().split('T')[0];
+    const updated = { ...partC, [field]: value };
+    if (
+      (field === "recommendation" || field === "supervisorComments") &&
+      !updated.dateOfReview
+    ) {
+      updated.dateOfReview = new Date().toISOString().split("T")[0];
     }
-    if (!updatedPartC.supervisorSignature && user?.name) {
-      updatedPartC.supervisorSignature = user.name;
-    }
-
-    setPartC(updatedPartC);
+    if (!updated.supervisorSignature && user?.name)
+      updated.supervisorSignature = user.name;
+    setPartC(updated);
   };
 
-  // Handle Part D changes (Final Approval)
   const handlePartDChange = (field: string, value: any) => {
-    const updatedPartD = { ...partD, [field]: value };
-
-    // Auto-fill date and signature for Approver
-    if (field === "finalDecision" && !updatedPartD.dateOfDecision) {
-      updatedPartD.dateOfDecision = new Date().toISOString().split('T')[0];
+    const updated = { ...partD, [field]: value };
+    if (field === "finalDecision" && !updated.dateOfDecision) {
+      updated.dateOfDecision = new Date().toISOString().split("T")[0];
     }
-    if (!updatedPartD.approverSignature && user?.name) {
-      updatedPartD.approverSignature = user.name;
-    }
-
-    setPartD(updatedPartD);
+    if (!updated.approverSignature && user?.name)
+      updated.approverSignature = user.name;
+    setPartD(updated);
   };
 
-  // Save section data and move to next section
   const handleSaveSection = async () => {
     if (!selectedLeave) return;
-
     try {
       const formData = {
         partB: activeSection === "partB" ? partB : selectedLeave.formData?.partB,
         partC: activeSection === "partC" ? partC : selectedLeave.formData?.partC,
         partD: activeSection === "partD" ? partD : selectedLeave.formData?.partD,
       };
-
       const result = await updateLeaveRequest(selectedLeave._id, formData);
-
       if (result.success) {
         toast.success("Section saved successfully");
-
-        // Move to next section or close
         if (activeSection === "partB") setActiveSection("partC");
         else if (activeSection === "partC") setActiveSection("partD");
-        else {
-          closeModal();
-          fetchLeaves(employeeId);
-        }
+        else { closeModal(); fetchLeaves(employeeId); }
       } else {
         toast.error(result.error || "Failed to save section");
       }
@@ -284,47 +267,34 @@ const LeavesPage: React.FC = () => {
     }
   };
 
-  // Final approval/rejection
   const handleFinalDecision = async (decision: "approved" | "rejected") => {
     if (!selectedLeave || !user?.id) return;
-
     setProcessing(selectedLeave._id);
     try {
-      // First update the form data with final decision
       const formData = {
-        partB: partB,
-        partC: partC,
+        partB,
+        partC,
         partD: {
           ...partD,
           finalDecision: decision,
-          dateOfDecision: new Date().toISOString().split('T')[0],
+          dateOfDecision: new Date().toISOString().split("T")[0],
           approverSignature: user.name || "",
         },
       };
-
       await updateLeaveRequest(selectedLeave._id, formData);
 
-      // Then process the approval/rejection
       if (decision === "approved") {
         const result = await approveLeaveRequest(selectedLeave._id, user.id);
-        if (result.success) {
-          toast.success("Leave request approved successfully");
-        } else {
-          toast.error(result.error || "Failed to approve leave request");
-          return;
-        }
+        if (result.success) toast.success("Leave request approved successfully");
+        else { toast.error(result.error || "Failed to approve"); return; }
       } else {
         const result = await rejectLeaveRequest(
           selectedLeave._id,
           user.id,
           partC.supervisorComments || "Rejected"
         );
-        if (result.success) {
-          toast.success("Leave request rejected successfully");
-        } else {
-          toast.error(result.error || "Failed to reject leave request");
-          return;
-        }
+        if (result.success) toast.success("Leave request rejected successfully");
+        else { toast.error(result.error || "Failed to reject"); return; }
       }
 
       closeModal();
@@ -337,299 +307,17 @@ const LeavesPage: React.FC = () => {
     }
   };
 
-  const calculateDaysDifference = (start: Date, end: Date) => {
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-  const resetApprovalModal = () => {
-    setSelectedLeave(null);
-    setPartB({ annualLeaveDays: 21, deductedDays: 0, remainingLeaveDays: 21 });
-    setPartC({});
-    setPartD({});
-    setActiveSection("partB");
-  };
-
-  // Render Part B (HR Section)
-  const renderPartB = () => (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-800">Part B: HR Section</h3>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Annual Leave Days
-          </label>
-          <input
-            type="number"
-            value={partB.annualLeaveDays}
-            onChange={(e) => handlePartBChange("annualLeaveDays", parseInt(e.target.value))}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Deducted Days
-          </label>
-          <input
-            type="number"
-            value={partB.deductedDays}
-            onChange={(e) => handlePartBChange("deductedDays", parseInt(e.target.value))}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Remaining Leave Days
-          </label>
-          <input
-            type="number"
-            value={partB.remainingLeaveDays}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            disabled
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Date of Approval
-          </label>
-          <input
-            type="date"
-            value={partB.dateOfApproval || ""}
-            onChange={(e) => handlePartBChange("dateOfApproval", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          />
-        </div>
-        <div className="col-span-2">
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            HR Signature
-          </label>
-          <input
-            type="text"
-            value={partB.hrSignature || ""}
-            onChange={(e) => handlePartBChange("hrSignature", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            placeholder="HR representative signature"
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  // Render Part C (Supervisor Section)
-  const renderPartC = () => (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-800">Part C: Supervisor Review</h3>
-      <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Comments
-          </label>
-          <textarea
-            value={partC.supervisorComments || ""}
-            onChange={(e) => handlePartCChange("supervisorComments", e.target.value)}
-            className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            rows={3}
-            placeholder="Enter comments regarding the leave request"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Recommendation
-          </label>
-          <select
-            value={partC.recommendation || ""}
-            onChange={(e) => handlePartCChange("recommendation", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          >
-            <option value="">Select recommendation</option>
-            <option value="recommend-approval">Recommend Approval</option>
-            <option value="do-not-recommend">Do Not Recommend</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Date of Review
-          </label>
-          <input
-            type="date"
-            value={partC.dateOfReview || ""}
-            onChange={(e) => handlePartCChange("dateOfReview", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Supervisor Signature
-          </label>
-          <input
-            type="text"
-            value={partC.supervisorSignature || ""}
-            onChange={(e) => handlePartCChange("supervisorSignature", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            placeholder="Supervisor signature"
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  // Render Part D (Final Approval)
-  const renderPartD = () => (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-800">Part D: Final Approval</h3>
-      <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Final Decision
-          </label>
-          <select
-            value={partD.finalDecision || ""}
-            onChange={(e) => handlePartDChange("finalDecision", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          >
-            <option value="">Select decision</option>
-            <option value="approved">Approve</option>
-            <option value="rejected">Reject</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Date of Decision
-          </label>
-          <input
-            type="date"
-            value={partD.dateOfDecision || ""}
-            onChange={(e) => handlePartDChange("dateOfDecision", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Approver Signature
-          </label>
-          <input
-            type="text"
-            value={partD.approverSignature || ""}
-            onChange={(e) => handlePartDChange("approverSignature", e.target.value)}
-            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
-            placeholder="Approver signature"
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  // Render section navigation
-  const renderSectionNavigation = () => (
-    <div className="flex space-x-2 mb-6 border-b pb-4">
-      <button
-        type="button"
-        onClick={() => setActiveSection("partB")}
-        className={`px-4 py-2 rounded-lg text-sm font-medium ${activeSection === "partB"
-          ? "bg-blue-100 text-blue-700 border border-blue-300"
-          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-      >
-        Part B: HR
-      </button>
-      <button
-        type="button"
-        onClick={() => setActiveSection("partC")}
-        className={`px-4 py-2 rounded-lg text-sm font-medium ${activeSection === "partC"
-          ? "bg-blue-100 text-blue-700 border border-blue-300"
-          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-      >
-        Part C: Supervisor
-      </button>
-      <button
-        type="button"
-        onClick={() => setActiveSection("partD")}
-        className={`px-4 py-2 rounded-lg text-sm font-medium ${activeSection === "partD"
-          ? "bg-blue-100 text-blue-700 border border-blue-300"
-          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-      >
-        Part D: Final Approval
-      </button>
-    </div>
-  );
-
-  // 🔹 Loading
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
-
-  // 🔹 Employee view
-  if (role === "Employee") {
-    if (!employeeId) {
-      return (
-        <div className="flex flex-col items-center justify-center h-64 text-center space-y-2">
-          <p className="text-gray-500">
-            Could not find employee profile for this user.
-          </p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="container mx-auto p-6 space-y-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          My Leaves
-        </h1>
-        <p className="text-gray-500 dark:text-gray-400">
-          Manage your leave requests and view your leave calendar
-        </p>
-
-        <Tabs defaultValue="calendar" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="calendar" className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4" /> Calendar
-            </TabsTrigger>
-            <TabsTrigger value="requests" className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4" /> My Requests
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="calendar" className="mt-6">
-            <Calendar employeeId={employeeId} />
-          </TabsContent>
-
-          <TabsContent value="requests" className="mt-6">
-            <MyRequests />
-          </TabsContent>
-        </Tabs>
-      </div>
-    );
-  }
-
-  // Fix for the handleApprove function in LeavesPage.tsx
-  // Replace your existing handleApprove function with this:
-
+  // ─── Quick approve / reject (card buttons) ───────────────────────────────────
   async function handleApprove(leaveId: string): Promise<void> {
-    if (!user?.id) {
-      toast.error("User not authenticated");
-      return;
-    }
-
-    setProcessing(leaveId);
+    if (!user?.id) { toast.error("User not authenticated"); return; }
+    setProcessing(`approve-${leaveId}`);
     try {
-      // Check what approveLeaveRequest actually expects
-      // If it only needs 2 parameters (leaveId and userId), use this:
       const result = await approveLeaveRequest(leaveId, user.id);
-
-      // OR if it needs 3 parameters and the third is optional comments:
-      // const result = await approveLeaveRequest(leaveId, user.id, "Approved by admin");
-
       if (result.success) {
-        toast.success("Leave Approval Successful");
+        toast.success("Leave approved successfully");
         await fetchLeaves(employeeId);
       } else {
-        toast.error(result.error || "Failed To Process Leave Approval");
+        toast.error(result.error || "Failed to approve leave request");
       }
     } catch (err) {
       console.error("Error approving leave:", err);
@@ -640,12 +328,8 @@ const LeavesPage: React.FC = () => {
   }
 
   async function handleReject(leaveId: string): Promise<void> {
-    if (!user?.id) {
-      toast.error("User not authenticated");
-      return;
-    }
-
-    setProcessing(leaveId);
+    if (!user?.id) { toast.error("User not authenticated"); return; }
+    setProcessing(`reject-${leaveId}`);
     try {
       const result = await rejectLeaveRequest(leaveId, user.id, "Rejected by admin");
       if (result.success) {
@@ -662,12 +346,237 @@ const LeavesPage: React.FC = () => {
     }
   }
 
-  // 🔹 Admin/Manager view
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  const calculateDaysDifference = (start: Date, end: Date) => {
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const resetApprovalModal = () => {
+    setSelectedLeave(null);
+    setPartB({ annualLeaveDays: 21, deductedDays: 0, remainingLeaveDays: 21 });
+    setPartC({});
+    setPartD({});
+    setActiveSection("partB");
+  };
+
+  // ─── Render helpers ──────────────────────────────────────────────────────────
+  const renderPartB = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-gray-800">Part B: HR Section</h3>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Annual Leave Days</label>
+          <input
+            type="number"
+            value={partB.annualLeaveDays}
+            onChange={(e) => handlePartBChange("annualLeaveDays", parseInt(e.target.value))}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Deducted Days</label>
+          <input
+            type="number"
+            value={partB.deductedDays}
+            onChange={(e) => handlePartBChange("deductedDays", parseInt(e.target.value))}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Remaining Leave Days</label>
+          <input
+            type="number"
+            value={partB.remainingLeaveDays}
+            disabled
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Date of Approval</label>
+          <input
+            type="date"
+            value={partB.dateOfApproval || ""}
+            onChange={(e) => handlePartBChange("dateOfApproval", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          />
+        </div>
+        <div className="col-span-2">
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">HR Signature</label>
+          <input
+            type="text"
+            value={partB.hrSignature || ""}
+            onChange={(e) => handlePartBChange("hrSignature", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            placeholder="HR representative signature"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPartC = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-gray-800">Part C: Supervisor Review</h3>
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Comments</label>
+          <textarea
+            value={partC.supervisorComments || ""}
+            onChange={(e) => handlePartCChange("supervisorComments", e.target.value)}
+            className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            rows={3}
+            placeholder="Enter comments regarding the leave request"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Recommendation</label>
+          <select
+            value={partC.recommendation || ""}
+            onChange={(e) => handlePartCChange("recommendation", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          >
+            <option value="">Select recommendation</option>
+            <option value="recommend-approval">Recommend Approval</option>
+            <option value="do-not-recommend">Do Not Recommend</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Date of Review</label>
+          <input
+            type="date"
+            value={partC.dateOfReview || ""}
+            onChange={(e) => handlePartCChange("dateOfReview", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Supervisor Signature</label>
+          <input
+            type="text"
+            value={partC.supervisorSignature || ""}
+            onChange={(e) => handlePartCChange("supervisorSignature", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            placeholder="Supervisor signature"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPartD = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold text-gray-800">Part D: Final Approval</h3>
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Final Decision</label>
+          <select
+            value={partD.finalDecision || ""}
+            onChange={(e) => handlePartDChange("finalDecision", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          >
+            <option value="">Select decision</option>
+            <option value="approved">Approve</option>
+            <option value="rejected">Reject</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Date of Decision</label>
+          <input
+            type="date"
+            value={partD.dateOfDecision || ""}
+            onChange={(e) => handlePartDChange("dateOfDecision", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Approver Signature</label>
+          <input
+            type="text"
+            value={partD.approverSignature || ""}
+            onChange={(e) => handlePartDChange("approverSignature", e.target.value)}
+            className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800"
+            placeholder="Approver signature"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSectionNavigation = () => (
+    <div className="flex space-x-2 mb-6 border-b pb-4">
+      {(["partB", "partC", "partD"] as const).map((section) => {
+        const labels = {
+          partB: "Part B: HR",
+          partC: "Part C: Supervisor",
+          partD: "Part D: Final Approval",
+        };
+        return (
+          <button
+            key={section}
+            type="button"
+            onClick={() => setActiveSection(section)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+              activeSection === section
+                ? "bg-blue-100 text-blue-700 border border-blue-300"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {labels[section]}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // ─── Loading ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+      </div>
+    );
+  }
+
+  // ─── Employee view ────────────────────────────────────────────────────────────
+  if (role === "Employee") {
+    if (!employeeId) {
+      return (
+        <div className="flex flex-col items-center justify-center h-64 text-center">
+          <p className="text-gray-500">Could not find employee profile for this user.</p>
+        </div>
+      );
+    }
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Leaves</h1>
+        <p className="text-gray-500 dark:text-gray-400">
+          Manage your leave requests and view your leave calendar
+        </p>
+        <Tabs defaultValue="calendar" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="calendar" className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4" /> Calendar
+            </TabsTrigger>
+            <TabsTrigger value="requests" className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4" /> My Requests
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="calendar" className="mt-6">
+            <Calendar employeeId={employeeId} />
+          </TabsContent>
+          <TabsContent value="requests" className="mt-6">
+            <MyRequests />
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
+  // ─── Admin / Manager view ─────────────────────────────────────────────────────
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-        Leave Management
-      </h1>
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Leave Management</h1>
       <p className="text-gray-500 dark:text-gray-400">
         Review and manage employee leave requests
       </p>
@@ -675,8 +584,7 @@ const LeavesPage: React.FC = () => {
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="pending" className="flex items-center gap-2">
-            <ClipboardList className="h-4 w-4" /> Pending Requests (
-            {pendingLeaves.length})
+            <ClipboardList className="h-4 w-4" /> Pending ({pendingLeaves.length})
           </TabsTrigger>
           <TabsTrigger value="all-requests" className="flex items-center gap-2">
             <Users className="h-4 w-4" /> All Requests ({allLeaves.length})
@@ -700,9 +608,7 @@ const LeavesPage: React.FC = () => {
               onMultiSectionApprove={handleOpenApproval}
             />
           ) : (
-            <p className="text-center text-gray-500 py-8">
-              No pending leave requests
-            </p>
+            <p className="text-center text-gray-500 py-8">No pending leave requests</p>
           )}
         </TabsContent>
 
@@ -717,9 +623,7 @@ const LeavesPage: React.FC = () => {
               onMultiSectionApprove={handleOpenApproval}
             />
           ) : (
-            <p className="text-center text-gray-500 py-8">
-              No leave requests found
-            </p>
+            <p className="text-center text-gray-500 py-8">No leave requests found</p>
           )}
         </TabsContent>
 
@@ -731,19 +635,17 @@ const LeavesPage: React.FC = () => {
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Multi-Section Approval Process</h3>
             <p className="text-gray-600">
-              Use the "Detailed Approval" button in the leave lists to start the multi-section approval process.
+              Use the "Detailed Approval" button in the leave lists to start the
+              multi-section approval process.
             </p>
           </div>
         </TabsContent>
       </Tabs>
 
-      {/* Multi-Section Approval Modal */}
+      {/* ─── Multi-Section Approval Modal ─────────────────────────────────────── */}
       <Modal
         isOpen={isOpen}
-        onClose={() => {
-          closeModal();
-          resetApprovalModal();
-        }}
+        onClose={() => { closeModal(); resetApprovalModal(); }}
         className="max-w-4xl p-6 lg:p-10 max-h-[90vh] overflow-y-auto"
       >
         <div className="flex flex-col px-2 overflow-y-auto">
@@ -751,8 +653,10 @@ const LeavesPage: React.FC = () => {
             <h5 className="mb-2 font-semibold text-gray-800 text-xl">
               Multi-Section Leave Approval
             </h5>
+            {/* ✅ employeeDetails.name is always a guaranteed plain string */}
             <p className="text-sm text-gray-500">
-              Processing leave request for {selectedLeave?.employeeDetails.first_name}
+              Processing leave request for{" "}
+              {selectedLeave?.employeeDetails?.first_name || "employee"}
             </p>
           </div>
 
@@ -766,10 +670,7 @@ const LeavesPage: React.FC = () => {
 
           <div className="flex items-center gap-3 mt-8 sm:justify-end">
             <button
-              onClick={() => {
-                closeModal();
-                resetApprovalModal();
-              }}
+              onClick={() => { closeModal(); resetApprovalModal(); }}
               className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Cancel
@@ -782,14 +683,14 @@ const LeavesPage: React.FC = () => {
                   disabled={processing === selectedLeave?._id}
                   className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
                 >
-                  {processing === selectedLeave?._id ? 'Processing...' : 'Reject'}
+                  {processing === selectedLeave?._id ? "Processing..." : "Reject"}
                 </button>
                 <button
                   onClick={() => handleFinalDecision("approved")}
                   disabled={processing === selectedLeave?._id || !partD.finalDecision}
                   className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
                 >
-                  {processing === selectedLeave?._id ? 'Processing...' : 'Final Approve'}
+                  {processing === selectedLeave?._id ? "Processing..." : "Final Approve"}
                 </button>
               </div>
             ) : (

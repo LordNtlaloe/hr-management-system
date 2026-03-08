@@ -629,7 +629,9 @@ const HRDashboard: React.FC = () => {
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">HR Management Dashboard</h1>
           <Badge variant="outline" className="text-sm">
-            Last updated: {new Date().toLocaleString()}
+            <span suppressHydrationWarning>
+              Last updated: {new Date().toLocaleString()}
+              </span>
           </Badge>
         </div>
 
