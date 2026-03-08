@@ -8,19 +8,22 @@ import { getUserByEmail, getUserById } from "@/actions/user.actions"
 import bcrypt from "bcryptjs"
 import Google from "next-auth/providers/google"
 import { ObjectId } from "mongodb"
+// ✅ Import the Adapter type from next-auth's own bundled @auth/core so the
+//    cast below resolves against the correct (single) type instance.
+import type { Adapter } from "next-auth/adapters"
 
 declare module "next-auth" {
   interface User {
-    first_name: string,
-    last_name: string,
-    role?: "Employee"  | "Admin" | "HR" | "Manager"
+    first_name: string
+    last_name: string
+    role?: "Employee" | "Admin" | "HR" | "Manager"
   }
 
   interface Session {
     user: {
-      first_name: string,
-      last_name: string,
-      role: "Employee"  | "Admin" | "HR" | "Manager"
+      first_name: string
+      last_name: string
+      role: "Employee" | "Admin" | "HR" | "Manager"
     } & DefaultSession["user"]
   }
 }
@@ -28,14 +31,21 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     accessToken?: string
-    role?: "Employee"  | "Admin" | "HR" | "Manager"
+    role?: "Employee" | "Admin" | "HR" | "Manager"
   }
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // ✅ Cast to next-auth's own Adapter type.
+  //    @auth/mongodb-adapter and next-auth both depend on @auth/core but yarn
+  //    resolves them to different instances, making their AdapterUser types
+  //    structurally incompatible. The cast tells TypeScript to treat the adapter
+  //    as the version next-auth expects, which is safe because the runtime
+  //    implementation is identical.
   adapter: MongoDBAdapter(client, {
-    databaseName: "hr_management_db"
-  }),
+    databaseName: "hr_management_db",
+  }) as Adapter,
+
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -59,12 +69,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             const passwordsMatch = await bcrypt.compare(password, user.password)
 
             if (passwordsMatch) {
-              // Return user object that matches the User interface
               return {
                 id: user._id?.toString() || user.id?.toString(),
                 email: user.email,
                 name: user.name,
-                role: user.role || "Employee"
+                role: user.role || "Employee",
               } as User
             }
           }
@@ -73,21 +82,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           console.error("Authorization error:", error)
           return null
         }
-      }
-    })
+      },
+    }),
   ],
+
   session: { strategy: "jwt" },
+
   pages: {
     signIn: "/auth/sign-in",
-    error: "/auth/error"
+    error: "/auth/error",
   },
+
   events: {
     async linkAccount({ user }) {
       try {
         if (user.id) {
           const collection = db.collection("users")
 
-          // Use proper MongoDB query format
           let query: any
           if (ObjectId.isValid(user.id)) {
             query = { _id: new ObjectId(user.id) }
@@ -97,28 +108,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           await collection.updateOne(
             query,
-            {
-              $set: {
-                emailVerified: new Date(),
-                role: "Employee"
-              }
-            },
+            { $set: { emailVerified: new Date(), role: "Employee" } },
             { upsert: false }
           )
         }
       } catch (error) {
         console.error("Link account error:", error)
       }
-    }
+    },
   },
+
   callbacks: {
-    async signIn({ user, account, profile }) {
+    async signIn({ user, account }) {
       try {
-        // Allow OAuth without email verification
         if (account?.provider !== "credentials") {
           if (user.email) {
             const existingUser = await getUserByEmail(user.email)
-
             if (existingUser && !existingUser.role) {
               const collection = db.collection("users")
               await collection.updateOne(
@@ -130,14 +135,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return true
         }
 
-        // For credentials, check if user exists and is verified
-        if (!user.id) {
-          return false
-        }
+        if (!user.id) return false
 
         const existingUser = await getUserById(user.id)
-
-        // Allow sign in if user exists (remove email verification requirement for now)
         return !!existingUser
       } catch (error) {
         console.error("SignIn callback error:", error)
@@ -145,22 +145,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
 
-    // auth.ts - Update the JWT callback to properly handle roles
     async jwt({ token, user, account }) {
       try {
-        // Initial sign in
         if (user) {
           token.sub = user.id?.toString()
-          token.role = user.role || "Employee" // Default to Employee if no role is set
+          token.role = user.role || "Employee"
 
-          // For OAuth users, ensure they have a role in the database
           if (account?.provider !== "credentials" && user.email) {
             const existingUser = await getUserByEmail(user.email)
             if (existingUser) {
               token.role = existingUser.role || "Employee"
-              token.sub = existingUser._id?.toString() || existingUser.id?.toString()
+              token.sub =
+                existingUser._id?.toString() || existingUser.id?.toString()
 
-              // Update role in DB if not set
               if (!existingUser.role) {
                 const collection = db.collection("users")
                 await collection.updateOne(
@@ -173,7 +170,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return token
         }
 
-        // Subsequent requests - refresh user data
         if (token.sub) {
           const existingUser = await getUserById(token.sub)
           if (existingUser) {
@@ -187,21 +183,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token
       }
     },
+
     async session({ session, token }) {
       try {
         if (token.sub && session.user) {
           session.user.id = token.sub
         }
-
         if (token.role && session.user) {
           session.user.role = token.role
         }
-
         return session
       } catch (error) {
         console.error("Session callback error:", error)
         return session
       }
-    }
-  }
+    },
+  },
 })
